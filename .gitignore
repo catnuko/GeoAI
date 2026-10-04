@@ -4,5 +4,6 @@ dist/
 *.local
 .DS_Store
 geoai-cesium-experience/
+geoai-cesium-expert/
 experience/index.json
 .codebuddy

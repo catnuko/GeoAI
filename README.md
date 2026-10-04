@@ -245,6 +245,12 @@ node skill-export.js --out <dir> --top 20
   导出物是经验库的"热集视图"，**不是事实源**——skill 正文末尾会引导模型对长尾经验调用 `search_experience`；库更新后重新导出即可。事实源始终在经验库目录。
   导出物按固定章节组织：`## 使命` / `## 红线` / `## 工作流`（写码纪律与四步工作流）→ `## 能力库清单` → 坑位 → 范例 → `## 试试这样问我`（固定 3 条高频意图入口）；写盘前自动结构校验（frontmatter 严格格式 + 关键章节），失败不写盘。
 
+- **导出为 WorkBuddy 专家包（可选分发）**：`npm run export-expert [--install]` 生成 `.codebuddy-plugin` 专家包
+  （plugin.json 元数据 + agents/ 人格 + 内置经验热集 skill + 占位头像），规格对齐 WorkBuddy expert-manager
+  （tags / quickPrompts 固定 3 个、defaultInitPrompt 与第一条一致、displayDescription 中文 40-50 字、agents md 禁 tools 字段），
+  生成后自动包校验；`--install` 直装 `~/.workbuddy/plugins/marketplaces/my-experts/plugins/` 供 WorkBuddy 检测。
+  事实源不变，包只是导出视图；上架开放平台前需替换占位头像。
+
 - **含能力库清单（B 方案）**：导出物同时包含 `## 能力库清单` 一节（ready 状态的 kit +
   签名 + 示例代码 + 适用场景），置于经验热集**之前**，让 harness 一读就知道有哪些现成能力；
   各经验条目下也会标「⚡ 已封装为库: kit.xxx」。

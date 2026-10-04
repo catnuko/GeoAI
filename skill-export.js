@@ -20,6 +20,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { ensureStore, listIndex, getEntryById, storeDir } from './experience.js';
 import { listKits, experiencesForKit, kitsForExperience } from './lib-registry.js';
 import { validateSkillMd } from './experience-cli.js';
@@ -74,18 +75,8 @@ function fmtKits(index) {
   return lines;
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
-  ensureStore();
-  const index = listIndex().filter((e) => e.status !== 'broken');
-  if (!index.length) {
-    console.error('经验库为空, 无可导出内容:', storeDir());
-    process.exit(1);
-  }
-  const top = [...index]
-    .sort((a, b) => (b.successCount || 0) - (a.successCount || 0) || (b.created || '').localeCompare(a.created || ''))
-    .slice(0, args.top);
-
+/** 组装 SKILL.md 全文（本 CLI 与 expert-export.js 共用; top 为已排序的热集元数据） */
+export function renderSkill(top) {
   const pitfalls = [];
   const patterns = [];
   for (const meta of top) {
@@ -93,9 +84,11 @@ function main() {
     if (!entry) continue;
     (entry.kind === 'pitfall' ? pitfalls : patterns).push(fmtEntry(entry));
   }
+  // fmtKits 需要完整经验清单做 kit↔经验互导标题（listIndex 有缓存, 重复读取代价可忽略）
+  const index = listIndex().filter((e) => e.status !== 'broken');
 
   const today = new Date().toISOString().slice(0, 10);
-  const skill = [
+  return [
     '---',
     'name: geoai-cesium-experience',
     'description: 写 CesiumJS / geoai 场景代码前的能力库与已验证经验 —— 可直接调用的 kit 能力（相机飞行/取景、影像底图、3D 地形）、常见坑位与修法（flyTo 不返回 Promise、lookAt 相机锁定、后台动画不推进、脚本加载顺序）、可复用代码模式。当用户要生成、调试或运行 Cesium 三维场景代码时使用。',
@@ -138,6 +131,20 @@ function main() {
     '- 「画一个多边形, 量算贴地面积」（kit.drawer + kit.measure）',
     '- 「在点击处加弹窗, 并锁定相机跟随某点」（kit.overlay + kit.camera）',
   ].join('\n');
+}
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+  ensureStore();
+  const index = listIndex().filter((e) => e.status !== 'broken');
+  if (!index.length) {
+    console.error('经验库为空, 无可导出内容:', storeDir());
+    process.exit(1);
+  }
+  const top = [...index]
+    .sort((a, b) => (b.successCount || 0) - (a.successCount || 0) || (b.created || '').localeCompare(a.created || ''))
+    .slice(0, args.top);
+  const skill = renderSkill(top);
 
   // 写盘前自动结构校验 —— 上次「frontmatter 冒号后丢空格静默失效」靠人肉发现, 现在固化为检查
   const { errors, warns } = validateSkillMd(skill);
@@ -155,4 +162,5 @@ function main() {
   console.log(`（事实源: ${storeDir()} / src/lib/registry.json; 库更新后重新运行 npm run export-skill 即可）`);
 }
 
-main();
+// 被 expert-export.js import 时（argv[1] 指向别的文件）不触发 CLI
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
