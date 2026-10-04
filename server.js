@@ -301,3 +301,6 @@ function shutdown(signal) {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+// MCP 客户端断开 (stdio EOF) 时自动退出, 避免孤儿进程占用 3000/3001
+process.stdin.on('end', () => shutdown('stdin-closed'));
+process.stdin.on('close', () => shutdown('stdin-closed'));
