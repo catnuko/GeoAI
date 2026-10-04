@@ -41,7 +41,7 @@ async function main() {
     stderr: 'inherit', // 让 server.js 的日志直接透出，便于观察
   });
 
-  const client = new Client({ name: 'mini-mcp-cesium-test-client', version: '0.1.0' });
+  const client = new Client({ name: 'geoai-test-client', version: '0.2.0' });
   await client.connect(transport);
   out('MCP Client 已连接 server.js (stdio)');
 

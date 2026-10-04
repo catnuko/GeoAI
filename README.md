@@ -1,13 +1,13 @@
-# mini-mcp-cesium
+# GeoAI
 
-最小可运行的 MCP 桥接验证项目，用于打通这条链路：
+把 Cesium 地球接入 MCP 客户端的桥接服务。npm 包名为 `geoai-mcp`（`geoai` 在 npm 上已被占用），原名 mini-mcp-cesium。链路：
 
 ```
 MCP 客户端（WorkBuddy / Claude Desktop / Cursor）
    │  stdio (JSON-RPC)
    ▼
-本地 MCP Server (server.js)
-   │  WebSocket  ws://127.0.0.1:3001
+geoai MCP Server (server.js)
+   │  WebSocket  ws://127.0.0.1:3001（可用环境变量换端口）
    ▼
 浏览器页面（左侧 Monaco Editor + 右侧 Cesium 地球）
    │  new Function('viewer','Cesium', code)
@@ -15,37 +15,55 @@ MCP 客户端（WorkBuddy / Claude Desktop / Cursor）
 Cesium 执行代码
 ```
 
-不做数据库、不做登录、不做构建工具、不接 LLM、不做沙箱。代码由 MCP 客户端通过 `send_code` 传入。
+不做数据库、不做登录、不接 LLM、不做沙箱。代码由 MCP 客户端通过 `send_code` 传入。
 
 ---
 
 ## 1. 环境要求
 
-- Node.js >= 20（开发时使用 v22）
-- 支持 ESM（`package.json` 中 `"type": "module"`）
+- Node.js >= 20（开发时使用 v22 / v24）
 - 浏览器需能访问 CDN（jsDelivr）：Monaco Editor + CesiumJS
 
 ## 2. 安装与启动
 
+### 方式 A：MCP 客户端直接使用（推荐，无需克隆仓库）
+
+npm 包发布后，在 MCP 客户端配置里加一条即可（WorkBuddy 为 `~/.workbuddy/mcp.json`）：
+
+```json
+{
+  "mcpServers": {
+    "geoai": {
+      "command": "npx",
+      "args": ["-y", "geoai-mcp"]
+    }
+  }
+}
+```
+
+首次调用会自动下载并启动，无需手动安装、构建。
+
+### 方式 B：克隆源码运行
+
 ```bash
-npm install
-
-# 方式 A：构建前端 + 启动（生产模式，推荐）
-npm run build      # Vite 产出 dist/
+git clone https://github.com/catnuko/GeoAI.git && cd GeoAI
+npm install        # prepare 钩子自动执行 vite build，装完即有 dist/，无需手动构建
 npm start          # MCP Server + HTTP(3000) + WebSocket(3001)
+```
 
-# 方式 B：前端热更新开发
-npm run dev:web    # Vite dev server http://127.0.0.1:5173
-                   # 注意：MCP 工具 open_page 打开的仍是 3000，
-                   #        需要 npm start 同时在跑
+MCP 客户端配置见第 4 节。
 
-# 方式 C：跑内置自测客户端（自动拉起 server.js 并驱动全流程）
-npm test
+### 开发辅助
+
+```bash
+npm run dev:web    # 前端热更新 http://127.0.0.1:5173（open_page 仍指向 3000，见已知限制 #4）
+npm test           # 内置自测客户端，自动拉起 server.js 驱动全流程
 ```
 
 启动后：
-- HTTP 静态服务： http://127.0.0.1:3000 （托管 `dist/`）
+- HTTP 静态服务： http://127.0.0.1:3000 （托管 `dist/`，页面通过 `/config.json` 获取 WS 地址）
 - WebSocket： ws://127.0.0.1:3001
+- 端口被占用或想并行多实例时，用环境变量 `GEOAI_HTTP_PORT` / `GEOAI_WS_PORT` 覆盖（见第 4 节）。
 
 > 若 `dist/` 不存在，3000 端口会返回 503 并提示构建命令，不会静默白屏。
 
@@ -61,7 +79,7 @@ GeoAI/                # 仓库根目录即项目根
   src/
     main.js           # Cesium Viewer / Monaco / WebSocket / 代码执行
     style.css
-  dist/               # Vite 构建产物（gitignore）
+  dist/               # Vite 构建产物（gitignore；npm 发布时经 files 白名单随包分发）
   README.md
 ```
 
@@ -69,18 +87,49 @@ GeoAI/                # 仓库根目录即项目根
 
 - **只有 `src/` 与 `index.html` 参与 Vite 构建**。
 - **Cesium 与 Monaco Editor 仍从 CDN 加载**，不进产物。原因：两者都依赖全局脚本
-  加载顺序（见下方已知限制 #2），打包进来会破坏该顺序且引入 worker/资源路径问题。
+  加载顺序（见已知限制 #2），打包进来会破坏该顺序且引入 worker/资源路径问题。
   代价：离线环境不可用。
 - **`server.js` 不参与构建**，它跑在 Node 侧，负责托管 `dist/`。
+- **npm 发布内容**：`files` 白名单只带 `server.js` + `dist/` + README；`prepare`
+  钩子在 `npm install` / `npm publish` 前自动完成构建。
 
 ## 4. MCP 客户端配置
+
+npx 方式（包发布后推荐）：
 
 ```json
 {
   "mcpServers": {
-    "mini-cesium-mcp": {
+    "geoai": {
+      "command": "npx",
+      "args": ["-y", "geoai-mcp"]
+    }
+  }
+}
+```
+
+本地源码方式（开发 / 未发包时）：
+
+```json
+{
+  "mcpServers": {
+    "geoai": {
       "command": "node",
       "args": ["/绝对路径/GeoAI/server.js"]
+    }
+  }
+}
+```
+
+自定义端口（HTTP 与 WS 建议一起换，页面会通过 `/config.json` 自动拿到新 WS 地址）：
+
+```json
+{
+  "mcpServers": {
+    "geoai": {
+      "command": "npx",
+      "args": ["-y", "geoai-mcp"],
+      "env": { "GEOAI_HTTP_PORT": "3002", "GEOAI_WS_PORT": "3003" }
     }
   }
 }
@@ -92,7 +141,7 @@ GeoAI/                # 仓库根目录即项目根
 
 | 工具 | 参数 | 行为 |
 | --- | --- | --- |
-| `open_page` | 无 | 打开 http://127.0.0.1:3000，并等待页面 WebSocket 连入（超时 10s） |
+| `open_page` | 无 | 用默认浏览器打开 HTTP 服务地址（默认 http://127.0.0.1:3000），并等待页面 WebSocket 连入（超时 10s） |
 | `send_code` | `code: string` | 把 JS 推送到页面左侧 Monaco（不执行） |
 | `run_code` | 无 | 通知页面执行编辑器当前代码 |
 | `get_status` | 无 | 返回 `{ pageConnected, http, websocket }` |
@@ -134,9 +183,11 @@ viewer.camera.flyTo({
    但必须重新验证上面第 2 条的加载顺序。
 4. **`dev:web` 与 `open_page` 端口不同**：Vite dev server 在 5173，而 MCP 工具
    `open_page` 打开的是 express 的 3000。开发时要么 `npm run build` 后用 3000，
-   要么手动访问 5173（此时 MCP 仍能连上，因为 WebSocket 独立于前端来源）。
+   要么手动访问 5173（此时 MCP 仍能连上：WS 地址优先从 express 的 `/config.json` 获取，
+   Vite 下没有该端点时回退默认 3001，因此要求 express 侧用默认端口在跑）。
 5. **未接 LLM**：不自动生成代码，代码由客户端 `send_code` 传入。
-6. **硬编码端口**：3000 / 3001，仅绑定 127.0.0.1。端口被占用时 server 会打印明确错误并退出（`lsof -ti :3000 | xargs kill` 可清理）。
+6. **默认端口 3000/3001，可用环境变量覆盖**：`GEOAI_HTTP_PORT` / `GEOAI_WS_PORT`，
+   仅绑定 127.0.0.1。端口被占用时 server 会打印明确错误并退出（`lsof -ti :3000 | xargs kill` 可清理）。
 7. **无重连**：页面 WebSocket 断开后不会自动重连，刷新页面才恢复。
 8. **单页面连接**：同一时刻只保留最后一个页面连接（`pageSocket` 被后来者覆盖）。
 9. **stdio 单通道**：`server.js` 的 stdout 属于 MCP 协议通道，所有日志强制走 `console.error`（stderr）。
@@ -158,12 +209,23 @@ npm test
 2. 右侧 Cesium 相机飞向上海东方明珠（121.4998, 31.2397）
 3. 页面底部显示「执行成功」
 
-## 9. 下一步建议
+## 9. 发布到 npm（维护者）
+
+```bash
+npm login
+npm publish        # prepare 钩子先自动重新构建；files 白名单保证包内只有运行时文件
+```
+
+> 包名为 `geoai-mcp`（`geoai` 在 npm 上已被占用）。`package.json` 已去掉 `private`；
+> 如需改回私有，把 `"private": true` 加回去即可。License 目前为 MIT，可按需更换。
+
+## 10. 下一步建议
 
 | 方向 | 说明 |
 | --- | --- |
 | iframe 沙箱 | 把用户代码放进 `sandbox` iframe，`allow-scripts` + `postMessage` 返回结果/错误，替换 `new Function` |
-| 结果回传 | 页面执行结果目前只写 UI + 广播日志，可给 `run_code` 加 `await` 回执，让 MCP 直接拿到返回值 |
+| 结果回传 | 给 `run_code` 加 `await` 回执，让 MCP 直接拿到页面执行返回值 |
 | 场景库 | 内置 flyTo / 添加实体 / 地形剖面 / 时间轴 等预置代码片段，`send_snippet(name)` 工具 |
 | 多页面 | `pageSockets` Map 按 sessionId 管理，支持多标签页并行 |
 | 鉴权 | WS 加随机 token，避免本机其它进程误连 |
+| 自动重连 | 页面 WebSocket 断开后指数退避重连，替代「刷新页面恢复」 |

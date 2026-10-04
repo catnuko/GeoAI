@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
 /**
- * mini-mcp-cesium 前端构建配置
+ * geoai 前端构建配置
  *
  * 边界（刻意保持最小）：
  *   - 只构建自有代码（src/main.js、src/style.css、index.html）

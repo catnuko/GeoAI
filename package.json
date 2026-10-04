@@ -1,16 +1,38 @@
 {
-  "name": "mini-mcp-cesium",
-  "version": "0.1.0",
-  "private": true,
+  "name": "geoai-mcp",
+  "version": "0.2.0",
+  "description": "GeoAI —— 把 Cesium 地球接入 MCP 客户端的桥接服务（MCP stdio → WebSocket → 浏览器页面执行）",
+  "license": "MIT",
   "type": "module",
-  "description": "Minimal MCP stdio -> WebSocket -> Browser -> Cesium bridge validation project",
   "main": "server.js",
+  "bin": {
+    "geoai-mcp": "server.js"
+  },
+  "files": [
+    "server.js",
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "cesium",
+    "3d",
+    "gis",
+    "geoai",
+    "map"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/catnuko/GeoAI.git"
+  },
   "scripts": {
     "dev:web": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server.js",
-    "test": "node test-client.js"
+    "test": "node test-client.js",
+    "prepare": "vite build"
   },
   "engines": {
     "node": ">=20"

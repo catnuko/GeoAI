@@ -1,8 +1,8 @@
-/* mini-mcp-cesium :: src/main.js  （Vite 入口）
+/* geoai :: src/main.js  （Vite 入口）
  * 页面侧：
  *   - 初始化 Cesium Viewer（合规影像源，未配置 key 时退化为无影像地球）
  *   - 初始化 Monaco Editor（初始示例代码）
- *   - 连接 ws://127.0.0.1:3001，接收 MCP Server 下发的 setCode / runCode
+ *   - 连接 MCP Server 的 WebSocket（地址优先读 /config.json），接收 setCode / runCode
  *
  * Cesium / Monaco 仍由 index.html 用 CDN <script> 加载（不打包），
  * 因此这里读 window.Cesium / window.monaco / window.require。
@@ -13,7 +13,21 @@ import './style.css';
   'use strict';
 
   // ---------------------------------------------------------------- 配置
-  const WS_URL = 'ws://127.0.0.1:3001';
+  /** WS 地址：优先读 server.js 下发的 /config.json（支持 GEOAI_WS_PORT 换端口）；
+   *  dev:web（Vite 无该端点）或读取失败时退回默认端口。 */
+  const DEFAULT_WS_URL = 'ws://127.0.0.1:3001';
+  async function resolveWsUrl() {
+    try {
+      const res = await fetch('config.json', { cache: 'no-store' });
+      if (res.ok) {
+        const cfg = await res.json();
+        if (cfg && typeof cfg.wsUrl === 'string' && cfg.wsUrl) return cfg.wsUrl;
+      }
+    } catch {
+      // 静默回退默认地址
+    }
+    return DEFAULT_WS_URL;
+  }
 
   /** 天地图（合规影像源）token。未申请请保持占位符字符串，此时地球以纯色 + 经纬网渲染。
    *  申请入口：天地图官网 http://lbs.tianditu.gov.cn/ → 控制台 → 创建新应用 → 服务接口 → 申请 Key */
@@ -168,13 +182,14 @@ import './style.css';
 
   // ---------------------------------------------------------------- WebSocket
   let ws = null;
-  function connectWS() {
-    ws = new WebSocket(WS_URL);
+  async function connectWS() {
+    const wsUrl = await resolveWsUrl();
+    ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       wsStatusEl.textContent = 'WebSocket: 已连接';
       wsStatusEl.className = 'badge badge-on';
-      log('WebSocket 已连接到 ' + WS_URL, 'ok');
+      log('WebSocket 已连接到 ' + wsUrl, 'ok');
     };
 
     ws.onmessage = (ev) => {

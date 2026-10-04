@@ -1,10 +1,14 @@
+#!/usr/bin/env node
 /**
- * mini-mcp-cesium :: server.js
+ * geoai :: server.js
  *
  * 单进程同时承载:
  *   1. MCP Server (stdio)      -> 与 MCP 客户端 (Claude Desktop / Cursor / WorkBuddy) 通信
- *   2. HTTP 静态服务           -> 127.0.0.1:3000, 托管 Vite 构建产物 dist/
- *   3. WebSocket Server        -> 127.0.0.1:3001, 页面主动连入
+ *   2. HTTP 静态服务           -> 127.0.0.1:$GEOAI_HTTP_PORT(默认 3000), 托管 Vite 构建产物 dist/
+ *   3. WebSocket Server        -> 127.0.0.1:$GEOAI_WS_PORT(默认 3001), 页面主动连入
+ *
+ * 端口可用环境变量覆盖: GEOAI_HTTP_PORT / GEOAI_WS_PORT。
+ * 页面通过 /config.json 获取 WS 地址，因此换端口无需改前端代码。
  *
  * 关键纪律: 进程 stdout 属于 MCP 协议通道, 任何日志都必须走 console.error (stderr)。
  *            下面的 log() 是唯一允许的输出方式, 代码中不允许出现 console.log。
@@ -15,6 +19,7 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -23,26 +28,32 @@ import express from 'express';
 import open from 'open';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const { name: PKG_NAME, version: PKG_VERSION } = require('./package.json');
 
 const HTTP_HOST = '127.0.0.1';
-const HTTP_PORT = 3000;
 const WS_HOST = '127.0.0.1';
-const WS_PORT = 3001;
+const HTTP_PORT = Number.parseInt(process.env.GEOAI_HTTP_PORT ?? '', 10) || 3000;
+const WS_PORT = Number.parseInt(process.env.GEOAI_WS_PORT ?? '', 10) || 3001;
 const PAGE_URL = `http://${HTTP_HOST}:${HTTP_PORT}/`;
 const OPEN_TIMEOUT_MS = 10_000;
 
-/** @type {log唯一出口, 严禁 console.log */
+/** log 唯一出口, 严禁 console.log */
 function log(...args) {
-  console.error('[mini-mcp-cesium]', ...args);
+  console.error('[geoai]', ...args);
 }
 
 // ---------------------------------------------------------------- HTTP 静态服务
-// 托管 Vite 构建产物 dist/。开发时请跑 `pnpm dev:web`（Vite dev server 独立端口），
-// 或先 `pnpm build` 再 `npm start`。
+// 托管 Vite 构建产物 dist/。开发时请跑 `npm run dev:web`（Vite dev server 独立端口），
+// 或先 `npm run build` 再 `npm start`（npm install 的 prepare 钩子通常会自动完成构建）。
 const DIST_DIR = path.join(__dirname, 'dist');
 const HAS_DIST = fs.existsSync(path.join(DIST_DIR, 'index.html'));
 
 const app = express();
+// 页面侧 WS 地址下发: 端口可被环境变量改变, 页面不能写死 3001
+app.get('/config.json', (_req, res) => {
+  res.type('application/json').send(JSON.stringify({ wsUrl: `ws://${WS_HOST}:${WS_PORT}` }));
+});
 if (HAS_DIST) {
   app.use(express.static(DIST_DIR));
 } else {
@@ -53,9 +64,9 @@ if (HAS_DIST) {
       .send(
         'dist/index.html 不存在，页面尚未构建。\n\n' +
           '请任选其一：\n' +
-          '  1) 构建后启动：  pnpm build && npm start\n' +
-          '  2) 前端 dev：     pnpm dev:web   （Vite dev server http://127.0.0.1:5173）\n\n' +
-          '注意：MCP 工具 open_page 打开的是本 express 服务（3000 端口）。\n',
+          '  1) 构建后启动：  npm run build && npm start\n' +
+          '  2) 前端 dev：     npm run dev:web （Vite dev server http://127.0.0.1:5173）\n\n' +
+          `注意：MCP 工具 open_page 打开的是本 express 服务（${HTTP_PORT} 端口）。\n`,
       );
   });
 }
@@ -63,13 +74,13 @@ if (HAS_DIST) {
 const httpServer = app.listen(HTTP_PORT, HTTP_HOST, () => {
   log(`HTTP 静态服务已启动: ${PAGE_URL}`);
   if (!HAS_DIST) {
-    log(`警告: 未找到 dist/index.html，页面将返回 503。构建命令: pnpm build`);
+    log(`警告: 未找到 dist/index.html，页面将返回 503。构建命令: npm run build`);
   }
 });
 
 httpServer.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    log(`致命错误: 端口 ${HTTP_PORT} 已被占用。请先关闭占用进程（lsof -ti :${HTTP_PORT} | xargs kill）后重试。`);
+    log(`致命错误: 端口 ${HTTP_PORT} 已被占用。可设置环境变量 GEOAI_HTTP_PORT 换端口，或先关闭占用进程（lsof -ti :${HTTP_PORT} | xargs kill）后重试。`);
   } else {
     log(`HTTP 服务错误: ${err.message}`);
   }
@@ -88,7 +99,7 @@ const wss = new WebSocketServer({ host: WS_HOST, port: WS_PORT }, () => {
 
 wss.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    log(`致命错误: 端口 ${WS_PORT} 已被占用。请先关闭占用进程（lsof -ti :${WS_PORT} | xargs kill）后重试。`);
+    log(`致命错误: 端口 ${WS_PORT} 已被占用。可设置环境变量 GEOAI_WS_PORT 换端口，或先关闭占用进程（lsof -ti :${WS_PORT} | xargs kill）后重试。`);
   } else {
     log(`WebSocket 服务错误: ${err.message}`);
   }
@@ -154,7 +165,7 @@ function sendToPage(payload) {
 
 // ---------------------------------------------------------------- MCP Server
 const mcp = new McpServer(
-  { name: 'mini-mcp-cesium', version: '0.1.0' },
+  { name: PKG_NAME, version: PKG_VERSION },
   {
     capabilities: { tools: {} },
     instructions:
@@ -168,7 +179,7 @@ mcp.registerTool(
   'open_page',
   {
     title: '打开验证页面',
-    description: '用默认浏览器打开 http://127.0.0.1:3000 ，并等待页面 WebSocket 连接成功（超时 10 秒）。',
+    description: `用默认浏览器打开 ${PAGE_URL} ，并等待页面 WebSocket 连接成功（超时 10 秒）。`,
     inputSchema: {},
   },
   async () => {
@@ -269,7 +280,7 @@ mcp.registerTool(
 // ---------------------------------------------------------------- 启动 MCP (stdio)
 const transport = new StdioServerTransport();
 await mcp.connect(transport);
-log('MCP Server (stdio) 已就绪');
+log(`MCP Server (stdio) 已就绪: ${PKG_NAME}@${PKG_VERSION}`);
 
 // ---------------------------------------------------------------- 优雅退出
 let closing = false;
