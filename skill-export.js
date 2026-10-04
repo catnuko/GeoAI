@@ -4,7 +4,7 @@
  *
  * 从经验库导出"热集"为 SKILL.md —— 给支持 skills 的 harness（Claude Code / ZCode 等）用。
  *
- * 定位: 导出视图, 不是事实源。经验的事实源在 $GEOAI_EXPERIENCE_DIR（默认 ~/.geoai/experience），
+ * 定位: 导出视图, 不是事实源。经验的事实源在 $GEOAI_EXPERIENCE_DIR（默认 <包目录>/experience，随仓库分发），
  * 模型在运行中沉淀的新经验不会自动进入已导出的 skill —— 库更新后重新执行本命令即可。
  * skill 正文只放热集（按成功次数排序取 top N）；长尾与最新经验引导模型调用 geoai MCP 的
  * search_experience 工具实时检索。

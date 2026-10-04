@@ -12,7 +12,7 @@
     "server.js",
     "experience.js",
     "skill-export.js",
-    "seed",
+    "experience/entries",
     "dist",
     "README.md"
   ],

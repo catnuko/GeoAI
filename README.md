@@ -76,7 +76,8 @@ GeoAI/                # 仓库根目录即项目根
   index.html          # Vite 入口 HTML（CDN 引入 Monaco / Cesium）
   server.js           # MCP stdio + WebSocket + HTTP 静态服务（三合一进程，不参与构建）
   experience.js       # 经验库存储（Markdown 事实源 + index 缓存 + 检索/去重/自动捕获）
-  seed/entries/       # 内置冷启动经验（首次运行自动安装到用户经验库）
+  experience/
+    entries/          # 经验库事实源（每条一个 md，随仓库提交即分发；index.json 为 gitignore 缓存）
   test-client.js      # 模拟 MCP 客户端的端到端自测脚本
   src/
     main.js           # Cesium Viewer / Monaco / WebSocket / 代码执行
@@ -130,7 +131,7 @@ npx 方式（包发布后推荐）：
 | `GEOAI_HTTP_PORT` / `GEOAI_WS_PORT` | 3000 / 3001 | 端口覆盖（HTTP 与 WS 建议一起换，页面会通过 `/config.json` 自动拿到新 WS 地址） |
 | `GEOAI_WS_TOKEN` | 空 | 设置后页面必须带 `?token=xxx` 才能连入 WS（`open_page` 自动携带；手动打开时请自行拼上） |
 | `GEOAI_RUN_TIMEOUT_MS` | 30000 | `run_code` 等待页面执行回执的超时 |
-| `GEOAI_EXPERIENCE_DIR` | `~/.geoai/experience` | 经验库存储位置（建议绝对路径；指向一个 git 仓库即可多机同步） |
+| `GEOAI_EXPERIENCE_DIR` | `<包目录>/experience` | 经验库存储位置（默认随仓库分发；克隆使用时 git 提交即分发，npx 长期使用建议另指可写目录） |
 
 ```json
 {
@@ -166,10 +167,10 @@ npx 方式（包发布后推荐）：
 
 geoai 不只是执行通道，还是经验沉淀层：模型据此写代码 → 运行 → 运行结果沉淀为新经验。
 
-- **存储**：`GEOAI_EXPERIENCE_DIR`（默认 `~/.geoai/experience/`）。**事实源是每条经验一个 Markdown 文件**（`entries/*.md`，frontmatter 元数据 + 正文），人可直接编辑、git 可版本化；`index.json` 仅为可重建的缓存。
+- **存储**：默认就在**包目录的 `experience/`**——克隆使用时即仓库内，模型运行沉淀的经验直接落盘该目录，`git commit` 即分发（`GEOAI_EXPERIENCE_DIR` 可另指位置；以 `npx` 运行时写入的是包缓存，易失，长期使用建议克隆或另指目录）。**事实源是每条经验一个 Markdown 文件**（`experience/entries/*.md`，frontmatter 元数据 + 正文），人可直接编辑；`index.json` 为可重建缓存（gitignore）。
 - **三个来源**：① `run_code` 失败时自动落一条 draft 坑位（同一报错不重复捕获）；② 模型跑通后调 `save_experience` 主动固化（返回文本里有提示）；③ 人工直接编辑文件（改完下次检索立即生效，无需重启）。
 - **检索**：关键词打分（标题 5 / 报错签名 4 / tags 3 / API 3 / 正文 1），同分按成功次数排序。条目按**意图**组织（tags 里写场景关键词 + API 名 + 报错签名），不按 API 类组织。
-- **冷启动**：首次运行自动安装 `seed/entries/` 内置的 11 条已验证经验（来自本项目真实踩坑：lookAt 解锁、后台 rAF、CDN 离线、Cesium/Monaco 加载顺序等）。
+- **冷启动**：`experience/entries/` 内置 12 条已验证经验随仓库/包分发（本项目真实踩坑 + 实测：lookAt 解锁、后台 rAF、CDN 离线、Cesium/Monaco 加载顺序、ArcGIS 免费影像/地形等），新库直接可用，无需安装步骤。
 - **治理**：同名去重累加计数；draft 被修复固化后升级 verified；条目按成功次数与新鲜度淘汰（软上限 200，超出时提示清理）。
 - **导出为 Skill（可选加速）**：对支持 skills 的 harness（Claude Code / ZCode 等），可把经验库热集导出为自动触发的 SKILL.md：
 

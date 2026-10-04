@@ -4,29 +4,27 @@
  * 经验库存储。定位: "经验注入中间件"的事实源 —— 每条经验一个 Markdown 文件
  * (frontmatter 元数据 + 正文), index.json 仅为可随时重建的缓存。
  *
- * 目录: $GEOAI_EXPERIENCE_DIR (默认 ~/.geoai/experience)
- *   entries/*.md   事实源, 人类可直接编辑, git 可版本化
- *   index.json     缓存索引, 缺失/写入时自动重建
+ * 目录: $GEOAI_EXPERIENCE_DIR (默认 <包目录>/experience —— 克隆使用时即仓库内,
+ *       经验随 git 提交、随仓库/包分发; npx 运行时写在包缓存, 长期使用建议克隆或另指目录)
+ *   entries/*.md   事实源, 人类可直接编辑, 随仓库提交即分发
+ *   index.json     缓存索引 (gitignore), 缺失/写入时自动重建
  *
  * 设计约束:
  *   - 检索为实时扫描文件 (人工改文件后下一次 search 立即生效, 无需重启)
  *   - 写入原子化 (tmp + rename)
- *   - 首次使用自动安装 seed/entries 内置冷启动经验
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SEED_DIR = path.join(__dirname, 'seed', 'entries');
 
 const KINDS = new Set(['pitfall', 'snippet', 'pattern']);
 const STATUSES = new Set(['draft', 'verified', 'broken']);
 
 export function storeDir() {
-  return process.env.GEOAI_EXPERIENCE_DIR || path.join(os.homedir(), '.geoai', 'experience');
+  return process.env.GEOAI_EXPERIENCE_DIR || path.join(__dirname, 'experience');
 }
 
 function entriesDir() {
@@ -136,18 +134,12 @@ export function listIndex() {
   return rebuildIndex();
 }
 
-/** 初始化: 建目录 + 空库时装种子 + 索引缺失时重建 */
+/** 初始化: 建目录 (不可写时仅告警, 工具调用时报错) + 索引缺失时重建 */
 export function ensureStore() {
-  fs.mkdirSync(entriesDir(), { recursive: true });
-  const existing = fs.readdirSync(entriesDir()).filter((f) => f.endsWith('.md'));
-  if (existing.length === 0 && fs.existsSync(SEED_DIR)) {
-    for (const f of fs.readdirSync(SEED_DIR).filter((x) => x.endsWith('.md'))) {
-      try {
-        fs.copyFileSync(path.join(SEED_DIR, f), path.join(entriesDir(), f));
-      } catch (err) {
-        warn(`种子安装失败: ${f} (${err.message})`);
-      }
-    }
+  try {
+    fs.mkdirSync(entriesDir(), { recursive: true });
+  } catch (err) {
+    warn(`经验库目录不可写: ${entriesDir()} (${err.message}); 可用 GEOAI_EXPERIENCE_DIR 指定可写位置`);
   }
   if (!fs.existsSync(indexPath())) rebuildIndex();
 }
