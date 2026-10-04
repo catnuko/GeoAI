@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 catnuko <https://github.com/catnuko>
 /* geoai :: src/main.js  （Vite 入口）
  * 页面侧：
  *   - 初始化 Cesium Viewer（合规影像源，未配置 key 时退化为无影像地球）
@@ -8,6 +10,9 @@
  * 因此这里读 window.Cesium / window.monaco / window.require。
  */
 import './style.css';
+import { mountKits, getRegistry } from './lib/index';
+
+const registryKits = getRegistry().kits.filter((k) => k.status === 'ready');
 
 (function () {
   'use strict';
@@ -35,11 +40,17 @@ import './style.css';
 
   const INITIAL_CODE = [
     '// 由 MCP send_code 推送的代码会覆盖这里',
-    '// 可用变量: viewer (Cesium Viewer), Cesium (CesiumJS 全局)',
-    'viewer.camera.flyTo({',
-    '  destination: Cesium.Cartesian3.fromDegrees(121.4737, 31.2304, 8000000),',
-    '  duration: 2.0',
-    '});',
+    '// 可用变量: viewer (Cesium Viewer), Cesium (CesiumJS 全局), kit (能力库层)',
+    '// 优先用 kit 里的现成能力, 它已封装常见坑位; 没有的能力再直接写 Cesium API。',
+    '//',
+    '// 能力一览: kit.camera(飞行取景) kit.imagery(影像地形)',
+    '//           kit.drawer(鼠标绘图) kit.measure(距离面积量算) kit.overlay(弹窗提示)',
+    '// 用 list_libs 查看完整清单与示例, search_experience 检索坑位。',
+    'const r = await kit.camera.flyToRegion(',
+    '  { west: 121.2, south: 31.0, east: 121.7, north: 31.5 },',
+    '  { duration: 2 },',
+    ');',
+    'return r;',
   ].join('\n');
 
   // ---------------------------------------------------------------- DOM
@@ -63,6 +74,7 @@ import './style.css';
 
   // ---------------------------------------------------------------- Cesium
   let viewer;
+  let kit; // 能力库层装配结果，供 MCP 下发代码通过 kit.* 访问
   function initCesium() {
     if (typeof window.Cesium === 'undefined') {
       throw new Error(
@@ -113,6 +125,13 @@ import './style.css';
       destination: Cesium.Cartesian3.fromDegrees(121.4737, 31.2304, 18000000),
     });
     window.viewer = viewer; // 便于控制台手动调试
+
+    // 库层装配：把 Cesium 注入各能力库，产出 kit 对象。
+    // Cesium 走 CDN 全局，所以这里传 window.Cesium；若未来改 npm 依赖，
+    // 只需改成 import * as CesiumNS from 'cesium'，库代码零改动。
+    kit = mountKits({ Cesium: window.Cesium, viewer });
+    window.kit = kit; // 便于控制台手动调试
+    log('能力库已挂载: ' + Object.keys(registryKits).join(', '));
   }
 
   // ---------------------------------------------------------------- Monaco
@@ -157,9 +176,10 @@ import './style.css';
       // 验证用途：直接执行用户代码，无沙箱。生产环境必须替换为 iframe/worker 沙箱。
       // 用 AsyncFunction 包装: 支持代码顶层 await（ArcGIS/影像/地形 provider 的 fromUrl 都是异步工厂）。
       // async 函数体内的同步 throw 会变成 Promise 拒绝, 统一走下方 error 回执, 不影响 UX。
+      // 第三个参数 kit 是能力库层入口（src/lib/），未挂载时为 undefined，老代码不受影响。
       const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-      const fn = new AsyncFunction('viewer', 'Cesium', code);
-      const ret = fn(viewer, Cesium);
+      const fn = new AsyncFunction('viewer', 'Cesium', 'kit', code);
+      const ret = fn(viewer, Cesium, kit);
 
       Promise.resolve(ret).then(
         (val) => {

@@ -15,8 +15,10 @@
   "files": [
     "server.js",
     "experience.js",
+    "lib-registry.js",
     "skill-export.js",
     "experience/entries",
+    "src/lib",
     "dist",
     "README.md",
     "THIRD-PARTY-LICENSES.md",
@@ -37,10 +39,13 @@
   },
   "scripts": {
     "dev:web": "vite",
+    "typecheck": "tsc --noEmit",
     "build": "vite build",
+    "build:check": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "start": "node server.js",
     "test": "node test-client.js",
+    "test:libs": "node test-libs.js",
     "export-skill": "node skill-export.js",
     "prepare": "vite build"
   },
@@ -55,6 +60,8 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "cesium": "^1.121.1",
+    "typescript": "^5.9.3",
     "vite": "^8.3.2"
   }
 }

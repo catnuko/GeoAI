@@ -1,0 +1,181 @@
+{
+  "version": "0.1.0",
+  "kits": [
+    {
+      "id": "camera",
+      "package": "@geoai/cesium-kit-camera",
+      "source": "local",
+      "status": "ready",
+      "title": "相机控制",
+      "summary": "飞行取景、lookAt 跟随与解锁、等动画结束。封装了 Cesium 相机最常见的三类坑。",
+      "intents": [
+        "相机",
+        "飞行",
+        "flyTo",
+        "取景",
+        "对准",
+        "lookAt",
+        "解锁",
+        "等动画结束",
+        "camera",
+        "fly to region"
+      ],
+      "apis": ["camera.flyTo", "camera.lookAt", "camera.lookAtTransform", "camera.moveEnd"],
+      "signature": "kit.camera.flyToRegion({west,south,east,north}, {duration}) -> Promise<{center,height}>",
+      "snippet": "// 飞到某个经纬度范围并等动画结束（自动解除 lookAt 锁定）\nconst r = await kit.camera.flyToRegion(\n  { west: 116.2, south: 39.7, east: 116.7, north: 40.1 },\n  { duration: 2 },\n);\nreturn r;",
+      "experience": ["2026-10-04-lookat-unlock", "2026-10-04-flyto-moveend", "2026-10-04-background-raf"]
+    },
+    {
+      "id": "imagery",
+      "package": "@geoai/cesium-kit-imagery",
+      "source": "local",
+      "status": "ready",
+      "title": "影像与地形",
+      "summary": "免 key 的 ArcGIS 影像底图与 3D 地形高程、天地图影像、地形高程采样。",
+      "intents": [
+        "底图",
+        "影像",
+        "地形",
+        "高程",
+        "elevations",
+        "影像底图",
+        "ArcGIS",
+        "天地图",
+        "imagery",
+        "terrain"
+      ],
+      "apis": [
+        "ArcGisMapServerImageryProvider.fromUrl",
+        "ArcGISTiledElevationTerrainProvider.fromUrl",
+        "imageryLayers.addImageryProvider",
+        "sampleTerrainMostDetailed"
+      ],
+      "signature": "await kit.imagery.addArcGisImagery() / await kit.imagery.enableTerrain3D()",
+      "snippet": "// 免 key 影像底图 + 3D 地形（均为 ArcGIS 在线公开服务）\nawait kit.imagery.addArcGisImagery();\nawait kit.imagery.enableTerrain3D();\nreturn kit.camera.flyToRegion({ west: 116.2, south: 39.7, east: 116.7, north: 40.1 });",
+      "experience": ["2026-10-04-arcgis-world-imagery-terrain3d"]
+    },
+    {
+      "id": "drawer",
+      "package": "@geoai/cesium-kit-drawer",
+      "source": "local",
+      "status": "ready",
+      "title": "鼠标绘图",
+      "summary": "点线面圆矩形五种图形的鼠标交互绘制，贴地拾取三分支，自动跟随预览与清理。",
+      "intents": [
+        "绘图",
+        "画点",
+        "画线",
+        "画多边形",
+        "画圆",
+        "画矩形",
+        "标点",
+        "勾画",
+        "draw",
+        "polygon",
+        "polyline",
+        "clamp to ground"
+      ],
+      "apis": [
+        "ScreenSpaceEventHandler",
+        "CallbackProperty",
+        "camera.pickEllipsoid",
+        "camera.getPickRay",
+        "globe.pick",
+        "scene.pickPosition",
+        "entities.add",
+        "PolygonHierarchy",
+        "HeightReference.CLAMP_TO_GROUND"
+      ],
+      "signature": "kit.drawer.start({ type: 'POLYGON', pick: 'terrain', style: {...} }) -> { ok, type, status }; 回调 onEnd(result) 拿到纯 JSON 的 points",
+      "snippet": "// 贴地画一个多边形（左键加点 / 右键撤销 / 双击结束），结束回调给出经纬度序列\nconst out = await new Promise((resolve) => {\n  kit.drawer.start({\n    type: 'POLYGON',\n    pick: 'terrain',\n    style: { color: '#00CED1', outlineColor: '#FFD700' },\n    dynamicStyle: { color: '#00CED1', alpha: 0.15 },\n    onEnd: resolve,\n  });\n});\nreturn { count: out.count, points: out.points };",
+      "experience": ["2026-10-04-drawer-state-machine", "2026-10-04-drawer-pick-terrain", "2026-10-04-drawer-cancel-clears-all"]
+    },
+    {
+      "id": "measure",
+      "package": "@geoai/cesium-kit-measure",
+      "source": "local",
+      "status": "ready",
+      "title": "距离与面积量算",
+      "summary": "两点距离、多点折线长度、多边形面积；贴地/平面双模式，返回纯 JSON 含原始米值与格式化文本。",
+      "intents": [
+        "量算",
+        "测距",
+        "距离",
+        "面积",
+        "量面积",
+        "长度",
+        "贴地距离",
+        "测面积",
+        "measure",
+        "distance",
+        "area",
+        "length"
+      ],
+      "apis": [
+        "EllipsoidGeodesic.surfaceDistance",
+        "Cartesian3.distance",
+        "SceneTransforms.worldToWindowCoordinates",
+        "camera.getPickRay",
+        "globe.pick",
+        "globe.getHeight",
+        "Rectangle.fromDegrees"
+      ],
+      "signature": "kit.measure.distance(from, to, mode?: 'surface'|'plane', opts?) / kit.measure.polylineDistance(points, ...) / kit.measure.area(points, ...)",
+      "snippet": "// 两点贴地距离（surface 沿地表，plane 走椭球面测地线）\nconst d = kit.measure.distance(\n  { lon: 116.39, lat: 39.90 },\n  { lon: 116.42, lat: 39.95 },\n);\n\n// 多边形贴地面积（至少 3 点，自动闭合）\nconst a = kit.measure.area([\n  { lon: 116.39, lat: 39.90 },\n  { lon: 116.42, lat: 39.90 },\n  { lon: 116.42, lat: 39.93 },\n  { lon: 116.39, lat: 39.93 },\n]);\nreturn { distance: d, area: a };",
+      "experience": ["2026-10-04-measure-plane-vs-surface", "2026-10-04-measure-surface-camera-dependency"]
+    },
+    {
+      "id": "overlay",
+      "package": "@geoai/cesium-kit-overlay",
+      "source": "local",
+      "status": "ready",
+      "title": "弹窗与悬浮提示",
+      "summary": "HTML 元素跟随经纬度或屏幕坐标；随相机自动重定位，转到地球背面自动隐藏，转到屏幕外自动隐藏。",
+      "intents": [
+        "弹窗",
+        "气泡",
+        "popup",
+        "悬浮提示",
+        "tooltip",
+        "跟随鼠标",
+        "标注",
+        "提示框",
+        "跟随",
+        "infowindow",
+        "hover"
+      ],
+      "apis": ["SceneTransforms.worldToWindowCoordinates", "Occluder", "BoundingSphere", "Ellipsoid.WGS84", "scene.postRender.addEventListener", "ScreenSpaceEventHandler"],
+      "signature": "kit.overlay.popup({ lon, lat, content }) / kit.overlay.popupAtScreen({ screen: {x,y} }) / kit.overlay.tooltip({ content }) -> handle{ setText, moveTo, show, hide, close }",
+      "snippet": "const p = kit.overlay.popup({\n  lon: 116.39, lat: 39.90,\n  content: '<b>标题</b><br/>说明文字',\n});\n\n// 跟随鼠标的坐标提示\nconst tip = kit.overlay.tooltip();\n\nreturn { popupId: p.id, tooltipId: tip.id };",
+      "experience": ["2026-10-04-overlay-custom-container-crash"]
+    },
+    {
+      "id": "terrain",
+      "package": "@geoai/cesium-kit-terrain",
+      "source": "local",
+      "status": "planned",
+      "title": "地形分析",
+      "summary": "地形剖面、通视分析、等值线。规划中，尚未实现。",
+      "intents": ["地形剖面", "剖面", "通视", "等值线", "terrain profile", "line of sight"],
+      "apis": ["sampleTerrain", "clampToHeight"],
+      "signature": "(规划中)",
+      "snippet": "",
+      "experience": []
+    }
+  ],
+  "external": [
+    {
+      "id": "cesium-extends",
+      "source": "npm",
+      "status": "reference",
+      "note": "【第三方 MIT】cesium-extends 自身为 MIT（Copyright (c) 2023 練氣士），MIT 允许复制/修改/闭源分发，与本项目 AGPL-3.0-only 无冲突；直接复用其代码只需保留原版权声明（若日后引入，请登记到 THIRD-PARTY-LICENSES.md）。未直接引入的硬约束：它内部 `import from 'cesium'`，只能用于 Cesium 走 npm 的项目，而本项目页面走 CDN 全局 window.Cesium，直接引入会因双 Cesium 实例而失效（instanceof 与枚举比较全部失效且不报错）；其 rollup 产物为纯 ESM，无 UMD/IIFE。已沉淀（注入式重写为本地 kit，重写部分为本项目原创代码，按 AGPL-3.0-only 发布）：drawer→drawer、measure→measure、popup+tooltip+common/Widget→overlay。已修掉的原库缺陷：drawer 的 start() 重入泄漏 painter / once 与 sameStyle 语义矛盾 / 右键不足 3 点清空整图；measure 的 destroy() 泄漏 drawer / 二次 start 静默 no-op / 贴地计算每次 mousemove 做 100 次 globe.pick / 无 seed 随机点致结果不可复现 / 变量错位；popup 的自定义容器销毁必崩 / 内容翻倍 / Occluder 半径硬编码。未沉淀及其原因：primitive-geojson+geojson-render（价值最高但原库 5148 行坑密集且零测试：type 必须小写而文档写大写、value 渲染两路径行为不一致、高度换算 ×1000 硬编码、reloadPrimitive 重复调用堆积 Primitive 泄漏、图片加载缺 onerror 致 Promise 永久挂起），subscriber（add() 默认不生效，薄且被 Cesium 原生覆盖），sync-viewer（主导权仅在 MOUSE_MOVE 切换，触屏/键盘/程序化 flyTo 场景失效），compass+zoom-control（与 Cesium 原生控件重复：原库 compass 1171 行里约 600 行在重实现 Cesium 自带 compass 的拖拽数学，且 document 级监听在 destroy 时不解、orbit 依赖 clock.onTick 故时钟停止即无响应；zoom 的焦点是椭球而非地形），heat（依赖已过时的 @mars3d/heatmap.js，且 _getDataRange 南北边界硬编码写错）。"
+    },
+    {
+      "id": "cdn-script",
+      "source": "script",
+      "package": "(index.html 手动引入的全局脚本)",
+      "status": "manual",
+      "note": "外部 <script> 引入的插件：全局变量 + 加载顺序敏感（本仓库已踩过 Cesium/Monaco 顺序坑）。registry 只做登记，MCP 侧不能保证 run_code 可用，需先在 index.html 手动加 script。"
+    }
+  ]
+}

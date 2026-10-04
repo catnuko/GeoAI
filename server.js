@@ -44,6 +44,7 @@ import {
   saveExperience,
   captureFailure,
 } from './experience.js';
+import { listKits, getKit, searchKits, listExternal, kitsForExperience, experiencesForKit } from './lib-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -243,9 +244,10 @@ const mcp = new McpServer(
     capabilities: { tools: {}, resources: {} },
     instructions:
       '通过 WebSocket 把 JavaScript 推送到内嵌 Cesium 地球的页面并执行。' +
-      '代码以 AsyncFunction("viewer","Cesium", code) 包装执行（支持顶层 await，可直接 await provider 的 fromUrl），' +
-      '可直接访问 viewer 与 Cesium 全局对象。' +
-      '工作流: 写代码前先 search_experience 检索已验证经验（可用场景词 / API 名 / 报错关键词）；' +
+      '代码以 AsyncFunction("viewer","Cesium","kit", code) 包装执行（支持顶层 await，可直接 await provider 的 fromUrl），' +
+      '可直接访问 viewer、Cesium 全局对象，以及 kit（能力库层）。' +
+      '工作流: 写代码前先 list_libs 看有没有现成能力（库已封装常见坑位，优先 kit.* 而非裸写 Cesium API），' +
+      '再 search_experience 检索坑位与已验证代码（可用场景词 / API 名 / 报错关键词）；' +
       '然后 send_code 下发代码, run_code 执行 —— run_code 返回执行返回值或报错；' +
       '失败时按报错修改重试, 成功且有复用价值时用 save_experience 固化经验。',
   },
@@ -295,7 +297,7 @@ mcp.registerTool(
   'send_code',
   {
     title: '推送代码到编辑器',
-    description: '把一段 JavaScript 代码推送到目标页面的 Monaco 编辑器（不执行）。代码可使用 viewer 与 Cesium 变量。',
+    description: '把一段 JavaScript 代码推送到目标页面的 Monaco 编辑器（不执行）。代码可使用 viewer、Cesium 与 kit（能力库层）三个变量。',
     inputSchema: {
       code: z.string().min(1).describe('要下发的 JavaScript 源码'),
       sessionId: z.string().optional().describe('目标页面会话 id（页面以 ?session=<id> 连入）；不填则发给最近连入的页面'),
@@ -324,7 +326,7 @@ mcp.registerTool(
   {
     title: '执行编辑器中的代码',
     description:
-      '通知目标页面执行当前 Monaco 编辑器中的代码（new Function("viewer","Cesium", code)），并等待执行回执：' +
+      '通知目标页面执行当前 Monaco 编辑器中的代码（new Function("viewer","Cesium","kit", code)），并等待执行回执：' +
       '成功时返回执行返回值，失败时返回报错信息（可据此修改代码重试），超时默认 30 秒。',
     inputSchema: {
       sessionId: z.string().optional().describe('目标页面会话 id；不填则发给最近连入的页面'),
@@ -439,7 +441,13 @@ mcp.registerTool(
     const lines = hits.map((h, i) => {
       const m = h.entry;
       const codeLines = m.code ? `\n   代码: ${m.code.split('\n').slice(0, 6).join('\n   ')}` : '';
-      return `${i + 1}. [${m.kind}/${m.status}] ${m.title} (id=${m.id}, 成功${m.successCount}次)\n   什么时候用: ${m.trigger || '(见全文)'}${codeLines}\n   完整内容: get_experience("${m.id}")`;
+      // A 方案·互导：若该条经验已被能力库封装，明确告诉模型优先用库，别再裸写 Cesium API
+      const kits = kitsForExperience(m.id).filter((k) => k.status === 'ready');
+      const kitHint = kits.length
+        ? `\n   ⚡ 已封装为库: kit.${kits.map((k) => k.id).join(' / kit.')} —— 优先用库（已内置本条修法），` +
+          `get_lib_doc("${kits[0].id}")`
+        : '';
+      return `${i + 1}. [${m.kind}/${m.status}] ${m.title} (id=${m.id}, 成功${m.successCount}次)\n   什么时候用: ${m.trigger || '(见全文)'}${codeLines}${kitHint}\n   完整内容: get_experience("${m.id}")`;
     });
     return { content: [{ type: 'text', text: `命中 ${hits.length} 条经验:\n${lines.join('\n')}` }] };
   },
@@ -459,7 +467,13 @@ mcp.registerTool(
     if (!entry) {
       return { isError: true, content: [{ type: 'text', text: `未找到经验条目 id=${id}，请用 search_experience 重新检索。` }] };
     }
-    return { content: [{ type: 'text', text: entry.raw }] };
+    // A 方案·互导：单条阅读时同样提示库封装情况
+    const kits = kitsForExperience(entry.id).filter((k) => k.status === 'ready');
+    const hint = kits.length
+      ? `\n\n---\n⚡ 本条已封装为能力库：${kits.map((k) => `kit.${k.id}（${k.title}）`).join('、')}\n` +
+        `→ 写代码时优先用库（已内置本条修法），调 get_lib_doc("${kits[0].id}") 取用法。`
+      : '';
+    return { content: [{ type: 'text', text: entry.raw + hint }] };
   },
 );
 
@@ -499,6 +513,145 @@ mcp.registerTool(
       return { isError: true, content: [{ type: 'text', text: `保存失败: ${err.message}` }] };
     }
   },
+);
+
+// ---------------------------------------------------------------- 能力库工具
+// 库层（src/lib/）把 Cesium 踩过的坑固化成可调用能力，避免模型每次重写。
+// 检索时与经验库互补：list_libs 回答「该调什么」，search_experience 回答「会踩什么坑」。
+mcp.registerTool(
+  'list_libs',
+  {
+    title: '列出能力库',
+    description:
+      '列出已挂载到页面的 Cesium 能力库（kit）。写代码前先看这里：库已封装常见坑位，' +
+      '优先用 kit.* 而不是裸写 Cesium API。带 query 时按意图/场景/API 名过滤（如"相机""flyTo""底图""地形"）。',
+    inputSchema: {
+      query: z.string().optional().describe('可选检索词：场景意图 / API 名'),
+    },
+  },
+  async ({ query }) => {
+    const kits = query ? searchKits(query, 8).map((h) => h.kit) : listKits();
+    if (!kits.length) {
+      const all = listKits().map((k) => `${k.id}(${k.title})`).join('；');
+      return {
+        content: [
+          {
+            type: 'text',
+            text: query
+              ? `未命中「${query}」对应的能力库。现有: ${all || '(空)'}。可换个关键词, 或直接用 Cesium 原生 API。`
+              : '能力库为空（src/lib/registry.json 未配置或读取失败）。',
+          },
+        ],
+      };
+    }
+    const lines = kits.map((k) => {
+      const status = k.status === 'ready' ? '可用' : k.status === 'planned' ? '规划中(勿调用)' : k.status;
+      // A 方案·互导：库带出关联坑位，让模型一次就知道「有哪些能力 + 什么时候用/有什么坑」
+      const exps = experiencesForKit(k.id, listIndex).map((e) => e.title);
+      const exp = exps.length ? `\n   适用场景/坑位: ${exps.join('；')}` : '';
+      return `- [${status}] ${k.id} · ${k.title}\n   能力: ${k.summary}\n   调用: ${k.signature}${exp}`;
+    });
+    const ext = listExternal();
+    const extNote = ext.length
+      ? `\n\n外部包（仅登记，不深链）:\n${ext.map((e) => `- ${e.package} (${e.source}/${e.status}): ${e.note}`).join('\n')}`
+      : '';
+    return {
+      content: [
+        { type: 'text', text: `能力库 ${kits.length} 项:\n${lines.join('\n')}\n\n执行上下文可用变量: viewer, Cesium, kit${extNote}` },
+      ],
+    };
+  },
+);
+
+mcp.registerTool(
+  'get_lib_doc',
+  {
+    title: '读取能力库用法',
+    description: '按 id 读取某个 kit 的完整用法说明与可运行示例代码（id来自 list_libs）。',
+    inputSchema: {
+      id: z.string().min(1).describe('kit id（如 camera / imagery）'),
+    },
+  },
+  async ({ id }) => {
+    const kit = getKit(id);
+    if (!kit) {
+      const all = listKits().map((k) => k.id).join('；');
+      return { isError: true, content: [{ type: 'text', text: `未找到能力库 id=${id}。现有: ${all || '(空)'}` }] };
+    }
+    const parts = [
+      `=== ${kit.id} · ${kit.title} ===`,
+      `状态: ${kit.status}`,
+      `包名: ${kit.package}`,
+      `能力: ${kit.summary}`,
+      `签名: ${kit.signature}`,
+      `覆盖API: ${(kit.apis ?? []).join(', ')}`,
+    ];
+    if (kit.snippet) parts.push(`\n--- 示例代码（可直接 send_code 后 run_code）---\n${kit.snippet}`);
+    if ((kit.experience ?? []).length) {
+      parts.push(`\n相关经验条目（用 get_experience 读全文）: ${kit.experience.join(', ')}`);
+    }
+    if (kit.status === 'planned') {
+      parts.push('\n注意: 该库为规划中, 尚未实现, 调用会失败。');
+    }
+    return { content: [{ type: 'text', text: parts.join('\n') }] };
+  },
+);
+
+mcp.registerTool(
+  'send_snippet',
+  {
+    title: '下发能力库示例代码',
+    description:
+      '把某个 kit 的示例代码直接推送到页面编辑器（不执行），随后调run_code 执行。' +
+      '等价于 list_libs → get_lib_doc → send_code 的快捷方式。',
+    inputSchema: {
+      id: z.string().min(1).describe('kit id（如 camera / imagery）'),
+      sessionId: z.string().optional().describe('目标页面会话 id；不填则发给最近连入的页面'),
+    },
+  },
+  async ({ id, sessionId }) => {
+    const kit = getKit(id);
+    if (!kit) {
+      const all = listKits().map((k) => k.id).join('；');
+      return { isError: true, content: [{ type: 'text', text: `未找到能力库 id=${id}。现有: ${all || '(空)'}` }] };
+    }
+    if (!kit.snippet) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `能力库 ${id} 没有示例代码（status=${kit.status}），请直接写代码。` }],
+      };
+    }
+    try {
+      const sid = sendToPage({ type: 'setCode', code: kit.snippet }, sessionId);
+      lastCodeBySession.set(sid, kit.snippet);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `已把 ${id} 的示例代码推送到 session=${sid}（${kit.snippet.length} 字符）。调用 run_code 执行。`,
+          },
+        ],
+      };
+    } catch (err) {
+      return { isError: true, content: [{ type: 'text', text: err.message }] };
+    }
+  },
+);
+
+// 资源: 能力清单
+mcp.registerResource(
+  'libs',
+  'geoai://libs/index',
+  { title: '能力库清单', description: '已挂载的 Cesium 能力库与外部包登记（JSON）' },
+  async () => ({
+    contents: [
+      {
+        uri: 'geoai://libs/index',
+        mimeType: 'application/json',
+        text: JSON.stringify({ kits: listKits(), external: listExternal() }, null, 2),
+      },
+    ],
+  }),
 );
 
 // 资源: 连接状态 (客户端可按需拉取)

@@ -123,3 +123,61 @@ body { display: flex; flex-direction: column; }
 
 /* Cesium 控件在浅色底上的微调 */
 .cesium-viewer-bottom, .cesium-widget-credits { display: none !important; }
+
+/* ------------------------------------------------------------------
+ * cesium-kit-overlay 的跟随层样式
+ *
+ * 库只负责「定位 + 生命周期」，视觉一律交给页面 CSS：
+ * 这样换主题不用改库，也不会因为库内置样式与页面冲突而出现两套观感。
+ * 挂载容器默认是 viewer.container（Cesium 自己会处理 canvas 的相对定位），
+ * 所以这里用 absolute 即可。
+ * ------------------------------------------------------------------ */
+
+.geoai-popup {
+  position: absolute;
+  z-index: 10;
+  max-width: 320px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2937;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+}
+
+.geoai-popup-anchor {
+  position: absolute;
+  z-index: 9;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #2563eb;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.3);
+}
+
+.geoai-tooltip {
+  position: absolute;
+  z-index: 11;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.geoai-flash {
+  position: absolute;
+  z-index: 20;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #fff;
+  font-size: 13px;
+  transform: translateX(-50%);
+}

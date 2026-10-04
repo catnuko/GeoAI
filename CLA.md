@@ -7,8 +7,8 @@
 ## 1. 定义
 
 - **“你 / You”**：提交贡献的个人或实体。
-- **“贡献 / Contribution”**：你有意提交给本项目的任何代码、文档、经验库条目（`experience/entries/*.md`）或其他作品，包括但不限于 PR、issue 附件、补丁。
-- **“项目 / Project”**：GeoAI（`geoai-mcp`，仓库 `catnuko/GeoAI`）。
+- **“贡献 / Contribution”**：你有意提交给本项目的任何代码、文档、经验库条目（`experience/entries/*.md`）、能力库层（`src/lib/**`）或其他作品，包括但不限于 PR、issue 附件、补丁。
+- **“项目 / Project”**：GeoAI（`geoai-mcp`，仓库 `catnuko/GeoAI`），整体以 **AGPL-3.0-only** 授权，不含MIT 授权部分。
 - **“维护者 / Maintainer”**：项目的版权所有者及被授权管理贡献的人员。
 
 ## 2. 版权授权（Copyright License）

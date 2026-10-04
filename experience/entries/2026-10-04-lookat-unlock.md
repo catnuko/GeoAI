@@ -14,6 +14,10 @@ source: manual
 ## 什么时候用
 用 camera.lookAt 对准目标之后, 还需要继续用 flyTo/setView 自由控制相机时
 
+> **已封装为库**：`kit.camera.lookAtPoint()` / `kit.camera.unlock()`（见 `list_libs` → camera）。
+> `kit.camera` 的所有飞行方法都会在起飞前自动 `unlock()`，无需手写下面这段。
+> 本条保留的价值是**边界条件**：直接用原生 API 时才会遇到，需要自己补 `lookAtTransform`。
+
 ## 现象 / 报错
 lookAt 会把相机切到"目标跟随"变换模式; 该模式下 flyTo/setView 表现异常或不生效。
 

@@ -14,6 +14,11 @@ source: model
 ## 什么时候用
 需要给 Cesium 地球换上免费真实影像底图或真实地形高程时（免 key）
 
+> **已封装为库**：`await kit.imagery.addArcGisImagery()` / `await kit.imagery.enableTerrain3D()`
+> （见 `list_libs` → imagery）。URL 常量在 `kit.imagery.ARCGIS`。
+> 本条保留的价值是**服务清单与合规边界**——库里只放了 World_Imagery / Terrain3D 两个默认服务，
+> 要换其他服务仍需照下面的清单手动拼 URL。
+
 ## 代码（已验证）
 ```js
 // 影像底图（免 key, 2026-10 实测）—— 换服务只改 URL 路径:

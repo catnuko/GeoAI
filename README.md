@@ -57,7 +57,9 @@ MCP 客户端配置见第 4 节。
 
 ```bash
 npm run dev:web    # 前端热更新 http://127.0.0.1:5173（open_page 仍指向 3000，见已知限制 #4）
+npm run typecheck # 库层类型检查（tsc --noEmit）
 npm test           # 内置自测客户端，自动拉起 server.js 驱动全流程
+npm run test:libs  # 能力库层自测（31 项：list_libs / get_lib_doc / send_snippet / kit.* 真飞）
 ```
 
 启动后：
@@ -78,10 +80,21 @@ GeoAI/                # 仓库根目录即项目根
   experience.js       # 经验库存储（Markdown 事实源 + index 缓存 + 检索/去重/自动捕获）
   experience/
     entries/          # 经验库事实源（每条一个 md，随仓库提交即分发；index.json 为 gitignore 缓存）
-  test-client.js      # 模拟 MCP 客户端的端到端自测脚本
+  lib-registry.js     # 能力清单的 Node 侧读取与检索（供 MCP 工具 list_libs / get_lib_doc 用）
   src/
-    main.js           # Cesium Viewer / Monaco / WebSocket / 代码执行
+    main.js           # Cesium Viewer / Monaco / WebSocket / 代码执行 / kit 装配
     style.css
+    lib/              # 能力库层（注入式 TypeScript，详见第 5.1 节）
+      index.ts            # 装配入口：mountKits({ Cesium, viewer }) → kit 对象
+      registry.json       # 能力清单事实源（id / intents / apis / signature / snippet）
+      registry-schema.ts  # registry.json 的 TS 类型定义
+      cesium-api-types.ts # 唯一的 Cesium 类型接缝（全部 import type，编译期擦除）
+      cesium-kit-core/    # 契约层：createKit + 生命周期 + 断言
+      cesium-kit-camera/  # 相机：flyToRegion / lookAtPoint / unlock / snapshot
+      cesium-kit-imagery/ # 影像与地形：ArcGIS 免 key 底图/ 3D 地形 / 高程采样
+  tsconfig.json       # 库层类型检查配置（strict + noUncheckedIndexedAccess）
+  test-client.js      # 模拟 MCP 客户端的端到端自测脚本
+  test-libs.js        # 能力库层端到端自测（list_libs / get_lib_doc / send_snippet / kit.* 真飞）
   dist/               # Vite 构建产物（gitignore；npm 发布时经 files 白名单随包分发）
   README.md
 ```
@@ -92,9 +105,16 @@ GeoAI/                # 仓库根目录即项目根
 - **Cesium 与 Monaco Editor 仍从 CDN 加载**，不进产物。原因：两者都依赖全局脚本
   加载顺序（见已知限制 #2），打包进来会破坏该顺序且引入 worker/资源路径问题。
   代价：离线环境不可用。
+- **`src/lib/` 参与构建**（它是自有代码），库层用 **TypeScript** 编写。
+  - **Cesium 只作为类型来源**：装在 `devDependencies`，库内只用 `import type`（编译期完全擦除），
+    类型统一从 `src/lib/cesium-api-types.ts` 取。这保住了注入式契约的运行时独立性——
+    页面侧仍用 CDN 的 `window.Cesium`，68MB 的 Cesium **不进产物**（实测 dist 14.5 kB）。
+  - **禁止值导入**：库内不得出现 `import { ... } from 'cesium'`（会引入运行时依赖并导致双实例）。
+  - 类型检查：`npm run typecheck`（strict + `noUncheckedIndexedAccess`）；
+    `npm run build:check` = typecheck + build。
 - **`server.js` 不参与构建**，它跑在 Node 侧，负责托管 `dist/`。
-- **npm 发布内容**：`files` 白名单只带 `server.js` + `dist/` + README；`prepare`
-  钩子在 `npm install` / `npm publish` 前自动完成构建。
+- **npm 发布内容**：`files` 白名单只带 `server.js` + `lib-registry.js` + `dist/` + `src/lib/registry.json` + README；
+  `prepare` 钩子在 `npm install` / `npm publish` 前自动完成构建。
 
 ## 4. MCP 客户端配置
 
@@ -152,6 +172,9 @@ npx 方式（包发布后推荐）：
 | 工具 | 参数 | 行为 |
 | --- | --- | --- |
 | `open_page` | 无 | 用默认浏览器打开 HTTP 服务地址（默认 http://127.0.0.1:3000），并等待页面 WebSocket 连入（超时 10s）；配置了 `GEOAI_WS_TOKEN` 时自动携带 token |
+| `list_libs` | `query?` | 列出能力库（kit）；带 query 时按场景/API 名过滤。**写代码前先查这里**——库已封装常见坑位，优先 `kit.*` 而非裸写 Cesium API |
+| `get_lib_doc` | `id` | 读取某个 kit 的用法、签名与可运行示例 |
+| `send_snippet` | `id`, `sessionId?` | 把某个 kit 的示例代码直接推送到编辑器（不执行），随后 `run_code` |
 | `send_code` | `code: string`，`sessionId?` | 把 JS 推送到目标页面的 Monaco（不执行）；`sessionId` 不填则发给最近连入的页面 |
 | `run_code` | `sessionId?` | 通知目标页面执行编辑器当前代码并**等待回执**：成功返回执行返回值，失败返回报错信息并**自动捕获为经验草稿**，超时默认 30s |
 | `get_status` | 无 | 返回 `{ pageConnected, sessions, lastSession, http, websocket }` |
@@ -159,7 +182,7 @@ npx 方式（包发布后推荐）：
 | `get_experience` | `id: string` | 读取单条经验全文（含已验证代码） |
 | `save_experience` | `kind, title, code?...` | 固化经验（Markdown 文件）；run_code 成功后模型可自存，同名自动去重并累加成功次数 |
 
-**资源**：`geoai://status` —— 当前连接状态（JSON）；`geoai://experience/index` —— 经验库条目清单（JSON）。
+**资源**：`geoai://status`（连接状态）、`geoai://experience/index`（经验库清单）、`geoai://libs/index`（能力库清单 + 外部包登记）。
 
 **多会话**：页面以 `?session=<id>` 打开即可多开（如 `http://127.0.0.1:3000/?session=dev`）；同一 id 后连入的页面会替换先连入的，未指定时均归属 `default` 会话。
 
@@ -172,6 +195,9 @@ geoai 不只是执行通道，还是经验沉淀层：模型据此写代码 → 
 - **检索**：关键词打分（标题 5 / 报错签名 4 / tags 3 / API 3 / 正文 1），同分按成功次数排序。条目按**意图**组织（tags 里写场景关键词 + API 名 + 报错签名），不按 API 类组织。
 - **冷启动**：`experience/entries/` 内置 12 条已验证经验随仓库/包分发（本项目真实踩坑 + 实测：lookAt 解锁、后台 rAF、CDN 离线、Cesium/Monaco 加载顺序、ArcGIS 免费影像/地形等），新库直接可用，无需安装步骤。
 - **治理**：同名去重累加计数；draft 被修复固化后升级 verified；条目按成功次数与新鲜度淘汰（软上限 200，超出时提示清理）。
+- **与库层互导（A 方案）**：经验检索命中后若该条已被库封装，返回里会附一行
+  「⚡ 已封装为库: kit.xxx —— 优先用库」；反向 `list_libs` 也会带出该库对应的坑位标题。
+  两层因此不会各说各话，模型拿到坑位修法的同时知道该调哪个库。
 - **导出为 Skill（可选加速）**：对支持 skills 的 harness（Claude Code / ZCode 等），可把经验库热集导出为自动触发的 SKILL.md：
 
 ```bash
@@ -181,9 +207,16 @@ node skill-export.js --out <dir> --top 20
 
   导出物是经验库的"热集视图"，**不是事实源**——skill 正文末尾会引导模型对长尾经验调用 `search_experience`；库更新后重新导出即可。事实源始终在经验库目录。
 
-页面执行上下文提供两个变量：
+- **含能力库清单（B 方案）**：导出物同时包含 `## 能力库清单` 一节（ready 状态的 kit +
+  签名 + 示例代码 + 适用场景），置于经验热集**之前**，让 harness 一读就知道有哪些现成能力；
+  各经验条目下也会标「⚡ 已封装为库: kit.xxx」。
+  好处：支持 skills 但不方便挂 MCP 的 harness 也能用上库。
+  注意：**库代码本身仍需 MCP 或 npm 才能获得**，SKILL.md 只提供「有什么、怎么调」。
+
+页面执行上下文提供三个变量：
 - `viewer` — `Cesium.Viewer` 实例
 - `Cesium` — CesiumJS 全局对象
+- `kit` — 能力库层对象（见 5.1）
 
 ```js
 viewer.camera.flyTo({
@@ -191,6 +224,64 @@ viewer.camera.flyTo({
   duration: 2.0,
 });
 ```
+
+### 5.1 能力库层（`kit`）
+
+经验库记的是「坑与用法」，能力库记的是「**可直接调用的能力**」。两者互补：
+`list_libs` 回答「该调什么」，`search_experience` 回答「会踩什么坑」。
+
+**注入式契约（关键设计）**：所有库都从**入参**拿 Cesium，代码里不 `import 'cesium'`。
+
+```ts
+// src/lib/cesium-kit-camera/index.ts（节选）
+import type { Kit } from '../cesium-kit-core/index';
+
+export function createCameraKit(kit: Kit): CameraKit {
+  const Cesium = assertCesium(kit.Cesium, KIT_NAME); // Cesium 从入参来，不是 import
+  const { camera } = assertViewer(kit.viewer, KIT_NAME);
+  ...
+}
+```
+
+这样同一个库既能服务「GeoAI 页面用 CDN 全局 `window.Cesium`」，也能服务
+「其他项目 `import * as Cesium from 'cesium'`」，并从根上避免页面里同时存在两份 Cesium
+导致的 `instanceof` 失效 / 显存翻倍。
+
+**TypeScript 与类型来源**：库层是 TS，但**不把 Cesium 作为运行时依赖**——
+`cesium` 装在 `devDependencies` 只提供类型（`@types/cesium` 停留在 1.70，与当前 1.121 差距过大，故用官方包自带的
+`Source/Cesium.d.ts`），库内一律 `import type`，编译期被完全擦除。
+所有类型引用收敛到 `src/lib/cesium-api-types.ts` 这一个接缝，便于未来拆包时统一切换类型来源。
+
+**当前可用能力**（`list_libs` 可查，事实源 `src/lib/registry.json`）：
+
+| kit | 方法 | 封装的坑 |
+| --- | --- | --- |
+| `kit.camera` | `flyTo` / `flyToPoint` / `flyToRegion` / `lookAtPoint` / `unlock` / `snapshot` | `flyTo` 不返回 Promise（内部等 `moveEnd`）；`lookAt` 后相机锁定（飞行前自动解锁）；后台标签页 rAF 暂停（超时提示） |
+| `kit.imagery` | `addArcGisImagery` / `enableTerrain3D` / `disableTerrain` / `sampleHeight` / `tiandituImagery` / `removeAll` | ArcGIS 免 key 服务的 URL 与精度边界；天地图需自备 key |
+
+```js
+// 优先用库，而不是每次重写
+const r = await kit.camera.flyToRegion(
+  { west: 121.2, south: 31.0, east: 121.7, north: 31.5 },
+  { duration: 2 },
+);
+// → { ok: true, center: { lon, lat }, height, snapshot }
+```
+
+**外部包处理**（`registry.json` 的 `external` 段，只登记不深链）：
+
+| 类型 | 例子 | 说明 |
+| --- | --- | --- |
+| npm 依赖 | `cesium-extends` | 内部 `import from 'cesium'`，只能用于 Cesium 走 npm 的项目。其 tooltip/popup/measure/drawer 能力计划以注入式重写进本仓库 kits |
+| script 引入 | 任意 CDN `<script>` 插件 | 全局变量 + 加载顺序敏感（见已知限制 #2）。只做登记，MCP 不能保证 `run_code` 可用，需先在 `index.html` 手动加 script |
+
+**扩展一个新 kit**：
+
+1. 新建 `src/lib/cesium-kit-<name>/index.ts`，导出 `create<Name>Kit(kit: Kit): <Name>Kit`；
+   类型从 `../cesium-api-types` 取（**只用 `import type`**）；
+2. 在 `src/lib/index.ts` 的 `mountKits()` 里 `kit.use(create<Name>Kit)`；
+3. 在 `src/lib/registry.json` 加一条（含 `intents` 意图词、`apis`、`signature`、`snippet`）；
+4. `npm run typecheck` 通过后，`node test-libs.js` 验证。
 
 ## 6. 底图与合规说明
 
@@ -252,8 +343,19 @@ npm login
 npm publish        # prepare 钩子先自动重新构建；files 白名单保证包内只有运行时文件
 ```
 
-> 包名为 `geoai-mcp`（`geoai` 在 npm 上已被占用）。`package.json` 已去掉 `private`；
-> 如需改回私有，把 `"private": true` 加回去即可。License 目前为 MIT，可按需更换。
+> **License**：本项目整体采用 **GNU Affero General Public License v3.0 only（AGPL-3.0-only）**，
+> **不包含任何 MIT 授权部分**。`package.json`、`LICENSE`、`COMMERCIAL-LICENSE.md` 为准。
+>
+> 采用 open-core 双许可：AGPL 已足够绝大多数场景；不满足 AGPL §13（网络交互须公开源码）
+> 的业务可向维护者购买商业授权，在不开放自有专有代码的前提下使用。
+>
+> **范围覆盖整个仓库**，包括 `src/lib/` 能力库层与 `experience/` 经验库——
+> 库与 MCP 服务同为 AGPL，不做 license 分层。
+>
+> ⚠️ **拆包提示**：若将来把 `src/lib/` 拆成独立 npm 包发布到公共 registry，
+> 消费方（含Orillusion Geo 等私有项目）将受 AGPL 约束。
+> 私有项目可选择：① 保持 monorepo 内部依赖不单独发包；
+> ② 商业授权；③ 仅参考源码自行重写（注意 AGPL 不允许仅"借鉴"绕过许可）。
 
 ## 10. 下一步建议
 

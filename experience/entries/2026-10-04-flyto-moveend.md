@@ -14,6 +14,10 @@ source: manual
 ## 什么时候用
 想让 run_code 等相机飞行动画真正结束再返回结果时
 
+> **已封装为库**：`kit.camera.flyTo()` / `flyToPoint()` / `flyToRegion()` 全部返回真正 resolve 的
+> Promise（内部监听 `moveEnd`），并自带超时 + 后台标签页提示。优先用库。
+> 本条保留的价值是**边界条件**：绕过库直接调 `viewer.camera.flyTo` 时必须自己处理这两点。
+
 ## 现象 / 报错
 两个连续的坑: ① Cesium 1.121 的 camera.flyTo 返回 undefined（不是 Promise），return 它立刻得到 "undefined"；② camera 不是 Node EventEmitter，没有 .once/.on，Cesium 事件用 Cesium.Event 的 addEventListener。
 
