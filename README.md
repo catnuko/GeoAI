@@ -28,7 +28,6 @@ Cesium 执行代码
 ## 2. 安装与启动
 
 ```bash
-cd mini-mcp-cesium
 npm install
 
 # 方式 A：构建前端 + 启动（生产模式，推荐）
@@ -53,7 +52,7 @@ npm test
 ## 3. 目录结构
 
 ```
-mini-mcp-cesium/
+GeoAI/                # 仓库根目录即项目根
   package.json
   vite.config.js      # Vite 构建配置（只构建自有代码）
   index.html          # Vite 入口 HTML（CDN 引入 Monaco / Cesium）
@@ -81,7 +80,7 @@ mini-mcp-cesium/
   "mcpServers": {
     "mini-cesium-mcp": {
       "command": "node",
-      "args": ["/绝对路径/mini-mcp-cesium/server.js"]
+      "args": ["/绝对路径/GeoAI/server.js"]
     }
   }
 }
@@ -115,7 +114,7 @@ viewer.camera.flyTo({
 
 - **默认（无需 key）**：不加载影像瓦片，渲染纯色地球 + 经纬网 + 大气效果。
   桥接链路、Monaco 注入、代码执行、相机飞行全部可正常验证，不影响本项目目标。
-- **可选（合规影像）**：在 `public/app.js` 顶部把 `TIANDITU_TK` 的占位字符串替换为你自己的天地图 Key，即启用天地图影像底图。
+- **可选（合规影像）**：在 `src/main.js` 顶部把 `TIANDITU_TK` 的占位字符串替换为你自己的天地图 Key，即启用天地图影像底图。
   申请入口：天地图官网 http://lbs.tianditu.gov.cn/ → 控制台 → 创建新应用 → 服务接口 → 申请 Key。
 
 未配置时页面日志会明确提示「未配置天地图 key」，不会静默失败。
