@@ -171,6 +171,14 @@ geoai 不只是执行通道，还是经验沉淀层：模型据此写代码 → 
 - **检索**：关键词打分（标题 5 / 报错签名 4 / tags 3 / API 3 / 正文 1），同分按成功次数排序。条目按**意图**组织（tags 里写场景关键词 + API 名 + 报错签名），不按 API 类组织。
 - **冷启动**：首次运行自动安装 `seed/entries/` 内置的 11 条已验证经验（来自本项目真实踩坑：lookAt 解锁、后台 rAF、CDN 离线、Cesium/Monaco 加载顺序等）。
 - **治理**：同名去重累加计数；draft 被修复固化后升级 verified；条目按成功次数与新鲜度淘汰（软上限 200，超出时提示清理）。
+- **导出为 Skill（可选加速）**：对支持 skills 的 harness（Claude Code / ZCode 等），可把经验库热集导出为自动触发的 SKILL.md：
+
+```bash
+npm run export-skill                    # 输出 ./geoai-cesium-experience/SKILL.md（按成功次数取 top 12）
+node skill-export.js --out <dir> --top 20
+```
+
+  导出物是经验库的"热集视图"，**不是事实源**——skill 正文末尾会引导模型对长尾经验调用 `search_experience`；库更新后重新导出即可。事实源始终在经验库目录。
 
 页面执行上下文提供两个变量：
 - `viewer` — `Cesium.Viewer` 实例

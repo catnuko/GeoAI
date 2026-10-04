@@ -3,3 +3,4 @@ dist/
 .server.log
 *.local
 .DS_Store
+geoai-cesium-experience/

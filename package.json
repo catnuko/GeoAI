@@ -1,6 +1,6 @@
 {
   "name": "geoai-mcp",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "GeoAI —— 把 Cesium 地球接入 MCP 客户端的桥接服务（MCP stdio → WebSocket → 浏览器页面执行）",
   "license": "MIT",
   "type": "module",
@@ -11,6 +11,7 @@
   "files": [
     "server.js",
     "experience.js",
+    "skill-export.js",
     "seed",
     "dist",
     "README.md"
@@ -34,6 +35,7 @@
     "preview": "vite preview",
     "start": "node server.js",
     "test": "node test-client.js",
+    "export-skill": "node skill-export.js",
     "prepare": "vite build"
   },
   "engines": {
