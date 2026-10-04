@@ -144,9 +144,15 @@ import './style.css';
   }
 
   // ---------------------------------------------------------------- 执行
-  function runCode() {
+  function runCode(requestId) {
     const code = editor.getValue();
     setRunResult('执行中…');
+    // 带上请求 id 回传结果, server 据此把返回值/报错交还 MCP 客户端（模型据此自我修正）
+    const reply = (type, payload) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type, payload, id: requestId ?? null }));
+      }
+    };
     try {
       // 验证用途：直接 new Function 执行，无沙箱。生产环境必须替换为 iframe/worker 沙箱。
       const fn = new Function('viewer', 'Cesium', code);
@@ -157,39 +163,40 @@ import './style.css';
           const desc = val === undefined ? 'undefined' : JSON.stringify(val);
           setRunResult('✅ 执行成功，返回：' + desc, 'ok');
           log('执行成功，返回 ' + desc, 'ok');
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'result', payload: String(desc) }));
-          }
+          reply('result', String(desc));
         },
         (err) => {
           const msg = err && err.message ? err.message : String(err);
           setRunResult('❌ 执行失败：' + msg, 'err');
           log('执行失败: ' + msg, 'err');
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'error', payload: msg }));
-          }
+          reply('error', msg);
         },
       );
     } catch (e) {
       const msg = e && e.message ? e.message : String(e);
       setRunResult('❌ 运行错误：' + msg, 'err');
       log('运行错误: ' + msg, 'err');
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'error', payload: msg }));
-      }
+      reply('error', msg);
     }
   }
 
   // ---------------------------------------------------------------- WebSocket
   let ws = null;
   async function connectWS() {
+    // 页面 URL 的 ?token= / ?session= 透传给 WS：token 用于服务端鉴权，session 用于多会话路由
+    const pageParams = new URLSearchParams(location.search);
+    const extra = new URLSearchParams();
+    const token = pageParams.get('token');
+    if (token) extra.set('token', token);
+    extra.set('session', pageParams.get('session') || 'default');
     const wsUrl = await resolveWsUrl();
-    ws = new WebSocket(wsUrl);
+    const fullUrl = `${wsUrl}${wsUrl.includes('?') ? '&' : '?'}${extra.toString()}`;
+    ws = new WebSocket(fullUrl);
 
     ws.onopen = () => {
       wsStatusEl.textContent = 'WebSocket: 已连接';
       wsStatusEl.className = 'badge badge-on';
-      log('WebSocket 已连接到 ' + wsUrl, 'ok');
+      log('WebSocket 已连接到 ' + fullUrl, 'ok');
     };
 
     ws.onmessage = (ev) => {
@@ -206,14 +213,19 @@ import './style.css';
         setRunResult('代码已更新（来自 send_code），等待 run_code');
         log('收到 setCode，编辑器内容已更新（' + msg.code.length + ' 字符）');
       } else if (msg.type === 'runCode') {
-        runCode();
+        runCode(msg.id);
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       wsStatusEl.textContent = 'WebSocket: 已断开';
       wsStatusEl.className = 'badge badge-off';
-      log('WebSocket 已断开', 'err');
+      log(
+        ev.code === 4001
+          ? 'WebSocket 被拒绝: token 校验失败（服务端要求 GEOAI_WS_TOKEN，请从带 ?token= 的入口打开本页）'
+          : 'WebSocket 已断开',
+        'err',
+      );
     };
 
     ws.onerror = () => {

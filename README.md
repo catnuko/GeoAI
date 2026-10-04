@@ -7,7 +7,7 @@ MCP 客户端（WorkBuddy / Claude Desktop / Cursor）
    │  stdio (JSON-RPC)
    ▼
 geoai MCP Server (server.js)
-   │  WebSocket  ws://127.0.0.1:3001（可用环境变量换端口）
+   │  WebSocket  ws://127.0.0.1:3001（可换端口；?session=xxx 多会话；可选 token 鉴权）
    ▼
 浏览器页面（左侧 Monaco Editor + 右侧 Cesium 地球）
    │  new Function('viewer','Cesium', code)
@@ -121,7 +121,13 @@ npx 方式（包发布后推荐）：
 }
 ```
 
-自定义端口（HTTP 与 WS 建议一起换，页面会通过 `/config.json` 自动拿到新 WS 地址）：
+环境变量（全部可选，可任意组合）：
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `GEOAI_HTTP_PORT` / `GEOAI_WS_PORT` | 3000 / 3001 | 端口覆盖（HTTP 与 WS 建议一起换，页面会通过 `/config.json` 自动拿到新 WS 地址） |
+| `GEOAI_WS_TOKEN` | 空 | 设置后页面必须带 `?token=xxx` 才能连入 WS（`open_page` 自动携带；手动打开时请自行拼上） |
+| `GEOAI_RUN_TIMEOUT_MS` | 30000 | `run_code` 等待页面执行回执的超时 |
 
 ```json
 {
@@ -129,7 +135,7 @@ npx 方式（包发布后推荐）：
     "geoai": {
       "command": "npx",
       "args": ["-y", "geoai-mcp"],
-      "env": { "GEOAI_HTTP_PORT": "3002", "GEOAI_WS_PORT": "3003" }
+      "env": { "GEOAI_HTTP_PORT": "3002", "GEOAI_WS_PORT": "3003", "GEOAI_WS_TOKEN": "换成你的随机串" }
     }
   }
 }
@@ -141,10 +147,14 @@ npx 方式（包发布后推荐）：
 
 | 工具 | 参数 | 行为 |
 | --- | --- | --- |
-| `open_page` | 无 | 用默认浏览器打开 HTTP 服务地址（默认 http://127.0.0.1:3000），并等待页面 WebSocket 连入（超时 10s） |
-| `send_code` | `code: string` | 把 JS 推送到页面左侧 Monaco（不执行） |
-| `run_code` | 无 | 通知页面执行编辑器当前代码 |
-| `get_status` | 无 | 返回 `{ pageConnected, http, websocket }` |
+| `open_page` | 无 | 用默认浏览器打开 HTTP 服务地址（默认 http://127.0.0.1:3000），并等待页面 WebSocket 连入（超时 10s）；配置了 `GEOAI_WS_TOKEN` 时自动携带 token |
+| `send_code` | `code: string`，`sessionId?` | 把 JS 推送到目标页面的 Monaco（不执行）；`sessionId` 不填则发给最近连入的页面 |
+| `run_code` | `sessionId?` | 通知目标页面执行编辑器当前代码并**等待回执**：成功返回执行返回值，失败返回报错信息（模型可据此自我修正），超时默认 30s |
+| `get_status` | 无 | 返回 `{ pageConnected, sessions, lastSession, http, websocket }` |
+
+**资源**：`geoai://status` —— 当前连接状态（JSON）。
+
+**多会话**：页面以 `?session=<id>` 打开即可多开（如 `http://127.0.0.1:3000/?session=dev`）；同一 id 后连入的页面会替换先连入的，未指定时均归属 `default` 会话。
 
 页面执行上下文提供两个变量：
 - `viewer` — `Cesium.Viewer` 实例
@@ -188,8 +198,9 @@ viewer.camera.flyTo({
 5. **未接 LLM**：不自动生成代码，代码由客户端 `send_code` 传入。
 6. **默认端口 3000/3001，可用环境变量覆盖**：`GEOAI_HTTP_PORT` / `GEOAI_WS_PORT`，
    仅绑定 127.0.0.1。端口被占用时 server 会打印明确错误并退出（`lsof -ti :3000 | xargs kill` 可清理）。
+   WS 鉴权默认关闭（仅回环监听，风险低），需要隔离时设 `GEOAI_WS_TOKEN`。
 7. **无重连**：页面 WebSocket 断开后不会自动重连，刷新页面才恢复。
-8. **单页面连接**：同一时刻只保留最后一个页面连接（`pageSocket` 被后来者覆盖）。
+8. **同会话单页面**：同一 `session` id 只保留最后连入的页面（后连替换先连）；需要并行多页面时用 `?session=<id>` 区分。
 9. **stdio 单通道**：`server.js` 的 stdout 属于 MCP 协议通道，所有日志强制走 `console.error`（stderr）。
    往 server.js 加日志时务必不要使用 `console.log`，否则会破坏 MCP 协议。
 10. **`open_page` 依赖 GUI**：无桌面环境 / 沙箱中 `open()` 会失败，此时需手动访问 http://127.0.0.1:3000。
@@ -224,8 +235,7 @@ npm publish        # prepare 钩子先自动重新构建；files 白名单保证
 | 方向 | 说明 |
 | --- | --- |
 | iframe 沙箱 | 把用户代码放进 `sandbox` iframe，`allow-scripts` + `postMessage` 返回结果/错误，替换 `new Function` |
-| 结果回传 | 给 `run_code` 加 `await` 回执，让 MCP 直接拿到页面执行返回值 |
+| 经验库 | `search_experience` / `save_experience`：跑通的代码与踩过的坑沉淀为经验条目，模型生成前先查、跑通后再存（结果回传已就绪，闭环只差这一步） |
 | 场景库 | 内置 flyTo / 添加实体 / 地形剖面 / 时间轴 等预置代码片段，`send_snippet(name)` 工具 |
-| 多页面 | `pageSockets` Map 按 sessionId 管理，支持多标签页并行 |
-| 鉴权 | WS 加随机 token，避免本机其它进程误连 |
 | 自动重连 | 页面 WebSocket 断开后指数退避重连，替代「刷新页面恢复」 |
+| HTTP 传输 | 参考 cesium-mcp-runtime 增加 Streamable HTTP 传输，支持远程/云端 MCP host |

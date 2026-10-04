@@ -1,6 +1,6 @@
 {
   "name": "geoai-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "GeoAI —— 把 Cesium 地球接入 MCP 客户端的桥接服务（MCP stdio → WebSocket → 浏览器页面执行）",
   "license": "MIT",
   "type": "module",

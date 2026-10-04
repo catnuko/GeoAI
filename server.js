@@ -7,8 +7,15 @@
  *   2. HTTP 静态服务           -> 127.0.0.1:$GEOAI_HTTP_PORT(默认 3000), 托管 Vite 构建产物 dist/
  *   3. WebSocket Server        -> 127.0.0.1:$GEOAI_WS_PORT(默认 3001), 页面主动连入
  *
- * 端口可用环境变量覆盖: GEOAI_HTTP_PORT / GEOAI_WS_PORT。
- * 页面通过 /config.json 获取 WS 地址，因此换端口无需改前端代码。
+ * 环境变量:
+ *   GEOAI_HTTP_PORT / GEOAI_WS_PORT   端口覆盖（页面经 /config.json 自动获取 WS 地址）
+ *   GEOAI_WS_TOKEN                    可选。设置后页面必须带 ?token=xxx 才能连入 WS
+ *   GEOAI_RUN_TIMEOUT_MS              run_code 等待页面执行回执的超时（默认 30000）
+ *
+ * 会话: 页面以 ?session=<id> 连入（默认 default），同 id 后连者替换先连者；
+ *       send_code / run_code 可用 sessionId 定向，不填则发给最近连入的页面。
+ *       run_code 为请求-响应模式：页面执行后带 id 回传 result/error，工具把返回值或报错
+ *       直接交还 MCP 客户端，模型据此自我修正。
  *
  * 关键纪律: 进程 stdout 属于 MCP 协议通道, 任何日志都必须走 console.error (stderr)。
  *            下面的 log() 是唯一允许的输出方式, 代码中不允许出现 console.log。
@@ -35,6 +42,8 @@ const HTTP_HOST = '127.0.0.1';
 const WS_HOST = '127.0.0.1';
 const HTTP_PORT = Number.parseInt(process.env.GEOAI_HTTP_PORT ?? '', 10) || 3000;
 const WS_PORT = Number.parseInt(process.env.GEOAI_WS_PORT ?? '', 10) || 3001;
+const WS_TOKEN = process.env.GEOAI_WS_TOKEN || '';
+const RUN_TIMEOUT_MS = Number.parseInt(process.env.GEOAI_RUN_TIMEOUT_MS ?? '', 10) || 30_000;
 const PAGE_URL = `http://${HTTP_HOST}:${HTTP_PORT}/`;
 const OPEN_TIMEOUT_MS = 10_000;
 
@@ -88,10 +97,55 @@ httpServer.on('error', (err) => {
 });
 
 // ---------------------------------------------------------------- WebSocket 服务
-/** @type {import('ws').WebSocket | null} 当前页面连接 */
-let pageSocket = null;
-/** @type {(() => void) | null} 页面连接时的等待者 */
-let pageWaiter = null;
+/** @type {Map<string, import('ws').WebSocket>} sessionId -> 当前页面连接（同 id 后连者替换先连者） */
+const pageSockets = new Map();
+/** @type {string | null} 最近连入的会话, 作为未显式指定 sessionId 时的目标 */
+let lastSessionId = null;
+/** @type {Map<string, {ws: import('ws').WebSocket, resolve: (r: {ok: boolean, payload: unknown}) => void, reject: (e: Error) => void, timer: NodeJS.Timeout}>} run_code 请求-响应等待表 */
+const pendingRuns = new Map();
+let runSeq = 0;
+
+/** @type {Set<{sessionId: string, resolve: () => void, reject: (e: Error) => void, timer: NodeJS.Timeout}>} */
+const pageWaiters = new Set();
+
+function wakePageWaiters() {
+  for (const w of pageWaiters) {
+    if (pageSockets.get(w.sessionId)) {
+      clearTimeout(w.timer);
+      pageWaiters.delete(w);
+      w.resolve();
+    }
+  }
+}
+
+/** 等待指定会话的页面连入（已连接则立即返回）, 超时抛错 */
+function waitForPage(sessionId = 'default', timeoutMs = OPEN_TIMEOUT_MS) {
+  if (pageSockets.get(sessionId)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pageWaiters.delete(waiter);
+      reject(new Error(`等待页面 WebSocket 连接超时 (${timeoutMs / 1000}s)。请手动打开 ${PAGE_URL}`));
+    }, timeoutMs);
+    const waiter = { sessionId, resolve, reject, timer };
+    pageWaiters.add(waiter);
+  });
+}
+
+/** 解析目标页面: 显式 sessionId > 最近连入会话; 无任何页面时抛错 */
+function resolveTarget(sessionId) {
+  const sid = sessionId || lastSessionId || 'default';
+  const ws = pageSockets.get(sid);
+  if (!ws || ws.readyState !== ws.OPEN) {
+    throw new Error(`页面未连接 (session=${sid}): 请先调用 open_page 工具 (或手动打开 ${PAGE_URL})`);
+  }
+  return { ws, sessionId: sid };
+}
+
+function sendToPage(payload, sessionId) {
+  const target = resolveTarget(sessionId);
+  target.ws.send(JSON.stringify(payload));
+  return target.sessionId;
+}
 
 const wss = new WebSocketServer({ host: WS_HOST, port: WS_PORT }, () => {
   log(`WebSocket 服务已启动: ws://${WS_HOST}:${WS_PORT}`);
@@ -107,16 +161,26 @@ wss.on('error', (err) => {
 });
 
 wss.on('connection', (ws, req) => {
-  log(`页面已连接 WebSocket (from ${req.socket.remoteAddress})`);
-  pageSocket = ws;
-
-  if (pageWaiter) {
-    const w = pageWaiter;
-    pageWaiter = null;
-    w();
+  const url = new URL(req.url ?? '/', `http://${HTTP_HOST}:${HTTP_PORT}`);
+  if (WS_TOKEN && url.searchParams.get('token') !== WS_TOKEN) {
+    log('拒绝页面连接: token 缺失或不匹配');
+    ws.close(4001, 'invalid token');
+    return;
   }
+  const sessionId = url.searchParams.get('session') || 'default';
+  log(`页面已连接 WebSocket: session=${sessionId} (from ${req.socket.remoteAddress})`);
 
-  ws.send(JSON.stringify({ type: 'hello', message: 'MCP Server 已连接' }));
+  const prev = pageSockets.get(sessionId);
+  if (prev && prev !== ws) {
+    try {
+      prev.close(4000, 'replaced by newer connection');
+    } catch {}
+  }
+  pageSockets.set(sessionId, ws);
+  lastSessionId = sessionId;
+  wakePageWaiters();
+
+  ws.send(JSON.stringify({ type: 'hello', message: 'MCP Server 已连接', session: sessionId }));
 
   ws.on('message', (raw) => {
     let msg;
@@ -125,15 +189,33 @@ wss.on('connection', (ws, req) => {
     } catch {
       return;
     }
-    // 页面侧回执: 运行结果 / 错误, 仅用于日志观察
+    // 页面侧回执: run_code 请求-响应 + 日志观察
     if (msg.type === 'result' || msg.type === 'error') {
-      log(`页面执行回执 [${msg.type}]:`, JSON.stringify(msg.payload ?? '').slice(0, 500));
+      const pending = msg.id ? pendingRuns.get(msg.id) : undefined;
+      if (pending && pending.ws === ws) {
+        clearTimeout(pending.timer);
+        pendingRuns.delete(msg.id);
+        pending.resolve({ ok: msg.type === 'result', payload: msg.payload });
+      }
+      log(`页面执行回执 [${msg.type}]${msg.id ? ` id=${msg.id}` : ''}:`, JSON.stringify(msg.payload ?? '').slice(0, 500));
     }
   });
 
   ws.on('close', () => {
-    log('页面已断开 WebSocket');
-    if (pageSocket === ws) pageSocket = null;
+    log(`页面已断开 WebSocket: session=${sessionId}`);
+    if (pageSockets.get(sessionId) === ws) {
+      pageSockets.delete(sessionId);
+      if (lastSessionId === sessionId) {
+        lastSessionId = pageSockets.keys().next().value ?? null;
+      }
+    }
+    for (const [id, pending] of pendingRuns) {
+      if (pending.ws === ws) {
+        clearTimeout(pending.timer);
+        pendingRuns.delete(id);
+        pending.reject(new Error(`页面 (session=${sessionId}) 已断开, 执行结果未知`));
+      }
+    }
   });
 
   ws.on('error', (err) => {
@@ -141,37 +223,17 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-/** 等待页面连入, 超时抛错 */
-function waitForPage(timeoutMs) {
-  if (pageSocket) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pageWaiter = null;
-      reject(new Error(`等待页面 WebSocket 连接超时 (${timeoutMs / 1000}s)。请手动打开 ${PAGE_URL}`));
-    }, timeoutMs);
-    pageWaiter = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-  });
-}
-
-function sendToPage(payload) {
-  if (!pageSocket || pageSocket.readyState !== pageSocket.OPEN) {
-    throw new Error('页面未连接: 请先调用 open_page 工具 (或手动打开 ' + PAGE_URL + ')');
-  }
-  pageSocket.send(JSON.stringify(payload));
-}
-
 // ---------------------------------------------------------------- MCP Server
 const mcp = new McpServer(
   { name: PKG_NAME, version: PKG_VERSION },
   {
-    capabilities: { tools: {} },
+    capabilities: { tools: {}, resources: {} },
     instructions:
-      '通过 WebSocket 把 JavaScript 推送到一个内嵌 Cesium 地球的页面并执行。' +
+      '通过 WebSocket 把 JavaScript 推送到内嵌 Cesium 地球的页面并执行。' +
       '代码在页面上下文中以 new Function("viewer","Cesium", code)(viewer, Cesium) 执行，' +
-      '可直接访问 viewer 与 Cesium 全局对象。',
+      '可直接访问 viewer 与 Cesium 全局对象。' +
+      '工作流: 先 send_code 下发代码, 再 run_code 执行 —— run_code 会返回执行返回值或报错信息，' +
+      '若失败请根据报错修改代码后重试。',
   },
 );
 
@@ -179,20 +241,21 @@ mcp.registerTool(
   'open_page',
   {
     title: '打开验证页面',
-    description: `用默认浏览器打开 ${PAGE_URL} ，并等待页面 WebSocket 连接成功（超时 10 秒）。`,
+    description: `用默认浏览器打开 ${PAGE_URL} （session=default），并等待页面 WebSocket 连接成功（超时 10 秒）。配置了 GEOAI_WS_TOKEN 时自动携带 token。`,
     inputSchema: {},
   },
   async () => {
+    const openUrl = WS_TOKEN ? `${PAGE_URL}?token=${encodeURIComponent(WS_TOKEN)}` : PAGE_URL;
     let openedBy = 'open()';
     try {
-      await open(PAGE_URL);
+      await open(openUrl);
     } catch (err) {
       // macOS 无 GUI / 沙箱环境常见, 不阻断流程, 走等待分支
-      openedBy = `open() 失败: ${err.message}；请手动打开 ${PAGE_URL}`;
+      openedBy = `open() 失败: ${err.message}；请手动打开 ${openUrl}`;
       log(openedBy);
     }
     try {
-      await waitForPage(OPEN_TIMEOUT_MS);
+      await waitForPage('default', OPEN_TIMEOUT_MS);
     } catch (err) {
       return {
         isError: true,
@@ -205,7 +268,7 @@ mcp.registerTool(
         {
           type: 'text',
           text:
-            `页面已打开并连接成功: ${PAGE_URL}\n` +
+            `页面已打开并连接成功: ${PAGE_URL} (session=default)\n` +
             `打开方式: ${openedBy}\n` +
             '左侧为 Monaco 编辑器, 右侧为 Cesium 地球。现在可以调用 send_code / run_code。',
         },
@@ -218,21 +281,26 @@ mcp.registerTool(
   'send_code',
   {
     title: '推送代码到编辑器',
-    description: '把一段 JavaScript 代码推送到页面左侧 Monaco 编辑器（不执行）。代码可使用 viewer 与 Cesium 变量。',
+    description: '把一段 JavaScript 代码推送到目标页面的 Monaco 编辑器（不执行）。代码可使用 viewer 与 Cesium 变量。',
     inputSchema: {
-      code: z.string().min(1).describe('要执行的 JavaScript 源码'),
+      code: z.string().min(1).describe('要下发的 JavaScript 源码'),
+      sessionId: z.string().optional().describe('目标页面会话 id（页面以 ?session=<id> 连入）；不填则发给最近连入的页面'),
     },
   },
-  async ({ code }) => {
+  async ({ code, sessionId }) => {
     if (typeof code !== 'string' || !code.length) {
       return { isError: true, content: [{ type: 'text', text: '参数 code 必须是非空字符串' }] };
     }
     try {
-      sendToPage({ type: 'setCode', code });
+      const sid = sendToPage({ type: 'setCode', code }, sessionId);
+      return {
+        content: [
+          { type: 'text', text: `已推送 ${code.length} 字符到 session=${sid} 的编辑器。调用 run_code 执行（会返回执行结果或报错）。` },
+        ],
+      };
     } catch (err) {
       return { isError: true, content: [{ type: 'text', text: err.message }] };
     }
-    return { content: [{ type: 'text', text: `已推送 ${code.length} 字符到编辑器。调用 run_code 执行。` }] };
   },
 );
 
@@ -240,16 +308,46 @@ mcp.registerTool(
   'run_code',
   {
     title: '执行编辑器中的代码',
-    description: '通知页面执行当前 Monaco 编辑器中的代码（new Function("viewer","Cesium", code)）。',
-    inputSchema: {},
+    description:
+      '通知目标页面执行当前 Monaco 编辑器中的代码（new Function("viewer","Cesium", code)），并等待执行回执：' +
+      '成功时返回执行返回值，失败时返回报错信息（可据此修改代码重试），超时默认 30 秒。',
+    inputSchema: {
+      sessionId: z.string().optional().describe('目标页面会话 id；不填则发给最近连入的页面'),
+    },
   },
-  async () => {
+  async ({ sessionId }) => {
+    let target;
     try {
-      sendToPage({ type: 'runCode' });
+      target = resolveTarget(sessionId);
     } catch (err) {
       return { isError: true, content: [{ type: 'text', text: err.message }] };
     }
-    return { content: [{ type: 'text', text: '已下发执行指令，结果见页面控制台 / 回执日志。' }] };
+
+    const id = `run-${++runSeq}`;
+    try {
+      const outcome = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pendingRuns.delete(id);
+          reject(new Error(`等待页面执行回执超时 (${RUN_TIMEOUT_MS / 1000}s)。代码可能包含长时间异步操作, 结果可稍后查看页面日志。`));
+        }, RUN_TIMEOUT_MS);
+        pendingRuns.set(id, { ws: target.ws, resolve, reject, timer });
+        target.ws.send(JSON.stringify({ type: 'runCode', id }));
+      });
+
+      const desc =
+        typeof outcome.payload === 'string' ? outcome.payload : JSON.stringify(outcome.payload ?? null);
+      if (outcome.ok) {
+        return {
+          content: [{ type: 'text', text: `执行成功 (session=${target.sessionId})，返回：${desc}` }],
+        };
+      }
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `页面执行失败 (session=${target.sessionId})：${desc}` }],
+      };
+    } catch (err) {
+      return { isError: true, content: [{ type: 'text', text: err.message }] };
+    }
   },
 );
 
@@ -257,17 +355,19 @@ mcp.registerTool(
   'get_status',
   {
     title: '查询页面连接状态',
-    description: '返回页面 WebSocket 是否已连接。',
+    description: '返回各会话页面的 WebSocket 连接情况。',
     inputSchema: {},
   },
   async () => {
-    const connected = !!pageSocket && pageSocket.readyState === pageSocket.OPEN;
+    const sessions = [...pageSockets.keys()];
     return {
       content: [
         {
           type: 'text',
           text: JSON.stringify({
-            pageConnected: connected,
+            pageConnected: sessions.length > 0,
+            sessions,
+            lastSession: lastSessionId,
             http: PAGE_URL,
             websocket: `ws://${WS_HOST}:${WS_PORT}`,
           }),
@@ -275,6 +375,33 @@ mcp.registerTool(
       ],
     };
   },
+);
+
+// 资源: 连接状态 (客户端可按需拉取)
+mcp.registerResource(
+  'status',
+  'geoai://status',
+  { title: '连接状态', description: 'geoai 页面会话连接状态（JSON）' },
+  async (uri) => ({
+    contents: [
+      {
+        uri: uri.href,
+        mimeType: 'application/json',
+        text: JSON.stringify(
+          {
+            name: PKG_NAME,
+            version: PKG_VERSION,
+            sessions: [...pageSockets.keys()],
+            lastSession: lastSessionId,
+            http: PAGE_URL,
+            websocket: `ws://${WS_HOST}:${WS_PORT}`,
+          },
+          null,
+          2,
+        ),
+      },
+    ],
+  }),
 );
 
 // ---------------------------------------------------------------- 启动 MCP (stdio)
@@ -288,6 +415,10 @@ function shutdown(signal) {
   if (closing) return;
   closing = true;
   log(`收到 ${signal}, 正在关闭...`);
+  for (const [id, pending] of pendingRuns) {
+    clearTimeout(pending.timer);
+    pending.reject(new Error('server 正在关闭'));
+  }
   try {
     wss.close();
   } catch {}
