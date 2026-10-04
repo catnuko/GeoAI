@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ensureStore, listIndex, getEntryById, storeDir } from './experience.js';
 import { listKits, experiencesForKit, kitsForExperience } from './lib-registry.js';
+import { validateSkillMd } from './experience-cli.js';
 
 function parseArgs(argv) {
   const args = { out: path.resolve('geoai-cesium-experience'), top: 12 };
@@ -107,16 +108,50 @@ function main() {
     `> 能力清单事实源: \`src/lib/registry.json\`。`,
     '> 这里只是热集: 长尾经验请调用 geoai MCP 的 `search_experience` / `list_libs` 实时检索。',
     '',
+    // 固定章节（对照 WorkBuddy 专家包 agents/*.md 的 Mission / Critical Rules / Workflow 组织方式）
+    '## 使命（先读）',
+    '',
+    '在 Cesium 页面里生成 / 调试 / 运行三维场景代码。kit 是首选路径, 坑位是已验证的教训。',
+    '',
+    '## 红线',
+    '',
+    '- `kit.*` 已封装的能力禁止裸写等价 Cesium API（相机 / 影像 / 绘制 / 量算 / 弹窗 / 贴地拾取的坑位已内置修法）',
+    '- Cesium 只从执行上下文入参拿（`viewer` / `Cesium` / `kit` 三变量）, 不要自建 Viewer 或重复引 CDN',
+    '- 写码前先查: `list_libs` 看能力、`search_experience` 检索坑位（场景词 / API 名 / 报错关键词）, 查不到再裸写',
+    '- `run_code` 失败会自动沉淀 draft 坑位; 成功且有复用价值才 `save_experience`（verified 才进热集）, 不要重复保存同一标题',
+    '',
+    '## 工作流',
+    '',
+    '1. `list_libs` → 有现成 kit 优先（`get_lib_doc` 看文档, `send_snippet` 直取示例）',
+    '2. `search_experience` → 检索同类坑位与已验证代码',
+    '3. `send_code` 下发 + `run_code` 执行 → 按报错修正重试',
+    '4. 成功且有复用价值 → `save_experience` 固化（需连接 geoai MCP）',
+    '',
     // 能力库放在经验之前 —— 模型读 skill 时先知道「有什么现成能力」，再学坑位
     ...fmtKits(index),
     ...(pitfalls.length ? ['## 坑位与修法（pitfall）', '', ...pitfalls] : []),
     ...(patterns.length ? ['## 用法要点与代码范例（pattern / snippet）', '', ...patterns] : []),
+    // 固定 3 条高频意图入口（对照 WorkBuddy quickPrompts：数量固定, 覆盖面优先）
+    '## 试试这样问我',
+    '',
+    '- 「加载 ArcGIS 免 key 影像 + 3D 地形, 飞到上海」（kit.imagery + kit.camera）',
+    '- 「画一个多边形, 量算贴地面积」（kit.drawer + kit.measure）',
+    '- 「在点击处加弹窗, 并锁定相机跟随某点」（kit.overlay + kit.camera）',
   ].join('\n');
+
+  // 写盘前自动结构校验 —— 上次「frontmatter 冒号后丢空格静默失效」靠人肉发现, 现在固化为检查
+  const { errors, warns } = validateSkillMd(skill);
+  if (errors.length) {
+    console.error('导出物自检未通过, 未写盘:');
+    for (const e of errors) console.error('  ERROR:', e);
+    process.exit(1);
+  }
 
   fs.mkdirSync(args.out, { recursive: true });
   const file = path.join(args.out, 'SKILL.md');
   fs.writeFileSync(file, skill, 'utf8');
   console.log(`已导出 ${top.length} 条经验热集 + ${listKits().filter((k) => k.status === 'ready').length} 个能力库 → ${file}`);
+  for (const w of warns) console.log(`  WARN: ${w}`);
   console.log(`（事实源: ${storeDir()} / src/lib/registry.json; 库更新后重新运行 npm run export-skill 即可）`);
 }
 

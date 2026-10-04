@@ -22,8 +22,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const KINDS = new Set(['pitfall', 'snippet', 'pattern']);
-const STATUSES = new Set(['draft', 'verified', 'broken']);
+export const KINDS = new Set(['pitfall', 'snippet', 'pattern']);
+export const STATUSES = new Set(['draft', 'verified', 'broken']);
 
 export function storeDir() {
   return process.env.GEOAI_EXPERIENCE_DIR || path.join(__dirname, 'experience');
@@ -75,8 +75,8 @@ function parseFrontmatter(text) {
   return { meta, body: m[2] ?? '' };
 }
 
-/** 解析并规范化一个条目文件; 结构不完整时返回 null */
-function parseEntry(file, raw) {
+/** 解析并规范化一个条目文件; 结构不完整时返回 null（lint 复用同一解析器, 避免两套语义） */
+export function parseEntry(file, raw) {
   const { meta, body } = parseFrontmatter(raw);
   if (!meta || !meta.id || !meta.title) return null;
   const entry = {
@@ -146,7 +146,7 @@ export function ensureStore() {
   if (!fs.existsSync(indexPath())) rebuildIndex();
 }
 
-function uniqueId(date, title) {
+export function uniqueId(date, title) {
   let slug = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -161,11 +161,11 @@ function uniqueId(date, title) {
   return id;
 }
 
-function normalizeTitle(t) {
+export function normalizeTitle(t) {
   return String(t).trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function buildEntryMd(e) {
+export function buildEntryMd(e) {
   const parts = [];
   const fm = {
     id: e.id,

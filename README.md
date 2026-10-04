@@ -107,6 +107,7 @@ GeoAI/                # 仓库根目录即项目根
   index.html          # Vite 入口 HTML（CDN 引入 Monaco / Cesium）
   server.js           # MCP stdio + WebSocket + HTTP 静态服务（三合一进程，不参与构建）
   experience.js       # 经验库存储（Markdown 事实源 + index 缓存 + 检索/去重/自动捕获）
+  experience-cli.js   # 经验库校验/创建流水线（lint 硬校验 / new 脚手架 / from-note 笔记转化）
   experience/
     entries/          # 经验库事实源（每条一个 md，随仓库提交即分发；index.json 为 gitignore 缓存）
   lib-registry.js     # 能力清单的 Node 侧读取与检索（供 MCP 工具 list_libs / get_lib_doc 用）
@@ -225,6 +226,12 @@ geoai 不只是执行通道，更是经验沉淀层——这是它区别于普�
 - **检索**：关键词打分（标题 5 / 报错签名 4 / tags 3 / API 3 / 正文 1），同分按成功次数排序。条目按**意图**组织（tags 里写场景关键词 + API 名 + 报错签名），不按 API 类组织。
 - **冷启动**：`experience/entries/` 内置 20 条已验证经验（全部 verified）随仓库/包分发（本项目真实踩坑 + 实测：lookAt 解锁、后台 rAF、CDN 离线、Cesium/Monaco 加载顺序、ArcGIS 免费影像/地形、DataV 中国行政边界、量测与绘制状态机、cesium-extends 集成等），新库直接可用，无需安装步骤。
 - **治理**：同名去重累加计数；draft 被修复固化后升级 verified；条目按成功次数与新鲜度淘汰（软上限 200，超出时提示清理）。
+- **校验与创建流水线**（组织模式对照 WorkBuddy expert-manager）：
+  `npm run lint:exp` 硬校验条目与导出物——frontmatter 严格 `key: value` 格式（防「冒号后丢空格静默失效」）、
+  id 与文件名一致、kind/status 白名单、缺 `## 什么时候用` 节、`[[相关条目]]` 与 registry 双向引用断链、导出物过期；
+  ERROR 退出码非零，WARN 仅提示。`node experience-cli.js new <slug> --title "..."` 生成 draft 脚手架（TODO 占位）；
+  `node experience-cli.js from-note <note.md> [--dry-run]` 把笔记 / WorkBuddy memory 片段启发式提取为 draft
+  （标题 / 报错行 / 修法章节 / js 代码块），补不齐的字段留 TODO，人工确认后入库。
 - **与库层互导（A 方案）**：经验检索命中后若该条已被库封装，返回里会附一行
   「⚡ 已封装为库: kit.xxx —— 优先用库」；反向 `list_libs` 也会带出该库对应的坑位标题。
   两层因此不会各说各话，模型拿到坑位修法的同时知道该调哪个库。
@@ -236,6 +243,7 @@ node skill-export.js --out <dir> --top 20
 ```
 
   导出物是经验库的"热集视图"，**不是事实源**——skill 正文末尾会引导模型对长尾经验调用 `search_experience`；库更新后重新导出即可。事实源始终在经验库目录。
+  导出物按固定章节组织：`## 使命` / `## 红线` / `## 工作流`（写码纪律与四步工作流）→ `## 能力库清单` → 坑位 → 范例 → `## 试试这样问我`（固定 3 条高频意图入口）；写盘前自动结构校验（frontmatter 严格格式 + 关键章节），失败不写盘。
 
 - **含能力库清单（B 方案）**：导出物同时包含 `## 能力库清单` 一节（ready 状态的 kit +
   签名 + 示例代码 + 适用场景），置于经验热集**之前**，让 harness 一读就知道有哪些现成能力；
