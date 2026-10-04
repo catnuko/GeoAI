@@ -1,7 +1,7 @@
 {
   "name": "geoai-mcp",
   "version": "0.6.0",
-  "description": "GeoAI —— 把 Cesium 地球接入 MCP 客户端的桥接服务（MCP stdio → WebSocket → 浏览器页面执行）",
+  "description": "GeoAI —— GIS 经验注入中间件：把经验丰富的 GIS 专家封装成 MCP 服务器（经验库 + 能力库 + 真实 Cesium 执行验证）",
   "license": "AGPL-3.0-only",
   "author": {
     "name": "catnuko",
