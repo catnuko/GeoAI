@@ -75,6 +75,8 @@ GeoAI/                # 仓库根目录即项目根
   vite.config.js      # Vite 构建配置（只构建自有代码）
   index.html          # Vite 入口 HTML（CDN 引入 Monaco / Cesium）
   server.js           # MCP stdio + WebSocket + HTTP 静态服务（三合一进程，不参与构建）
+  experience.js       # 经验库存储（Markdown 事实源 + index 缓存 + 检索/去重/自动捕获）
+  seed/entries/       # 内置冷启动经验（首次运行自动安装到用户经验库）
   test-client.js      # 模拟 MCP 客户端的端到端自测脚本
   src/
     main.js           # Cesium Viewer / Monaco / WebSocket / 代码执行
@@ -128,6 +130,7 @@ npx 方式（包发布后推荐）：
 | `GEOAI_HTTP_PORT` / `GEOAI_WS_PORT` | 3000 / 3001 | 端口覆盖（HTTP 与 WS 建议一起换，页面会通过 `/config.json` 自动拿到新 WS 地址） |
 | `GEOAI_WS_TOKEN` | 空 | 设置后页面必须带 `?token=xxx` 才能连入 WS（`open_page` 自动携带；手动打开时请自行拼上） |
 | `GEOAI_RUN_TIMEOUT_MS` | 30000 | `run_code` 等待页面执行回执的超时 |
+| `GEOAI_EXPERIENCE_DIR` | `~/.geoai/experience` | 经验库存储位置（建议绝对路径；指向一个 git 仓库即可多机同步） |
 
 ```json
 {
@@ -149,12 +152,25 @@ npx 方式（包发布后推荐）：
 | --- | --- | --- |
 | `open_page` | 无 | 用默认浏览器打开 HTTP 服务地址（默认 http://127.0.0.1:3000），并等待页面 WebSocket 连入（超时 10s）；配置了 `GEOAI_WS_TOKEN` 时自动携带 token |
 | `send_code` | `code: string`，`sessionId?` | 把 JS 推送到目标页面的 Monaco（不执行）；`sessionId` 不填则发给最近连入的页面 |
-| `run_code` | `sessionId?` | 通知目标页面执行编辑器当前代码并**等待回执**：成功返回执行返回值，失败返回报错信息（模型可据此自我修正），超时默认 30s |
+| `run_code` | `sessionId?` | 通知目标页面执行编辑器当前代码并**等待回执**：成功返回执行返回值，失败返回报错信息并**自动捕获为经验草稿**，超时默认 30s |
 | `get_status` | 无 | 返回 `{ pageConnected, sessions, lastSession, http, websocket }` |
+| `search_experience` | `query: string`，`limit?` | 检索经验库（坑位修法 / 已验证代码 / 用法要点）；写代码前建议先检索，支持场景词、API 名、报错关键词 |
+| `get_experience` | `id: string` | 读取单条经验全文（含已验证代码） |
+| `save_experience` | `kind, title, code?...` | 固化经验（Markdown 文件）；run_code 成功后模型可自存，同名自动去重并累加成功次数 |
 
-**资源**：`geoai://status` —— 当前连接状态（JSON）。
+**资源**：`geoai://status` —— 当前连接状态（JSON）；`geoai://experience/index` —— 经验库条目清单（JSON）。
 
 **多会话**：页面以 `?session=<id>` 打开即可多开（如 `http://127.0.0.1:3000/?session=dev`）；同一 id 后连入的页面会替换先连入的，未指定时均归属 `default` 会话。
+
+### 经验库（经验注入中间件）
+
+geoai 不只是执行通道，还是经验沉淀层：模型据此写代码 → 运行 → 运行结果沉淀为新经验。
+
+- **存储**：`GEOAI_EXPERIENCE_DIR`（默认 `~/.geoai/experience/`）。**事实源是每条经验一个 Markdown 文件**（`entries/*.md`，frontmatter 元数据 + 正文），人可直接编辑、git 可版本化；`index.json` 仅为可重建的缓存。
+- **三个来源**：① `run_code` 失败时自动落一条 draft 坑位（同一报错不重复捕获）；② 模型跑通后调 `save_experience` 主动固化（返回文本里有提示）；③ 人工直接编辑文件（改完下次检索立即生效，无需重启）。
+- **检索**：关键词打分（标题 5 / 报错签名 4 / tags 3 / API 3 / 正文 1），同分按成功次数排序。条目按**意图**组织（tags 里写场景关键词 + API 名 + 报错签名），不按 API 类组织。
+- **冷启动**：首次运行自动安装 `seed/entries/` 内置的 11 条已验证经验（来自本项目真实踩坑：lookAt 解锁、后台 rAF、CDN 离线、Cesium/Monaco 加载顺序等）。
+- **治理**：同名去重累加计数；draft 被修复固化后升级 verified；条目按成功次数与新鲜度淘汰（软上限 200，超出时提示清理）。
 
 页面执行上下文提供两个变量：
 - `viewer` — `Cesium.Viewer` 实例
@@ -235,7 +251,7 @@ npm publish        # prepare 钩子先自动重新构建；files 白名单保证
 | 方向 | 说明 |
 | --- | --- |
 | iframe 沙箱 | 把用户代码放进 `sandbox` iframe，`allow-scripts` + `postMessage` 返回结果/错误，替换 `new Function` |
-| 经验库 | `search_experience` / `save_experience`：跑通的代码与踩过的坑沉淀为经验条目，模型生成前先查、跑通后再存（结果回传已就绪，闭环只差这一步） |
+| 语义检索 | 经验检索从关键词打分升级为向量/语义检索（条目过千后再做） |
 | 场景库 | 内置 flyTo / 添加实体 / 地形剖面 / 时间轴 等预置代码片段，`send_snippet(name)` 工具 |
 | 自动重连 | 页面 WebSocket 断开后指数退避重连，替代「刷新页面恢复」 |
 | HTTP 传输 | 参考 cesium-mcp-runtime 增加 Streamable HTTP 传输，支持远程/云端 MCP host |

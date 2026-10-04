@@ -33,6 +33,15 @@ import { z } from 'zod';
 import { WebSocketServer } from 'ws';
 import express from 'express';
 import open from 'open';
+import {
+  ensureStore,
+  storeDir,
+  listIndex,
+  searchExperience,
+  getEntryById,
+  saveExperience,
+  captureFailure,
+} from './experience.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -104,6 +113,8 @@ let lastSessionId = null;
 /** @type {Map<string, {ws: import('ws').WebSocket, resolve: (r: {ok: boolean, payload: unknown}) => void, reject: (e: Error) => void, timer: NodeJS.Timeout}>} run_code 请求-响应等待表 */
 const pendingRuns = new Map();
 let runSeq = 0;
+/** @type {Map<string, string>} sessionId -> 最近一次 send_code 的代码（失败自动捕获时回溯用） */
+const lastCodeBySession = new Map();
 
 /** @type {Set<{sessionId: string, resolve: () => void, reject: (e: Error) => void, timer: NodeJS.Timeout}>} */
 const pageWaiters = new Set();
@@ -232,8 +243,9 @@ const mcp = new McpServer(
       '通过 WebSocket 把 JavaScript 推送到内嵌 Cesium 地球的页面并执行。' +
       '代码在页面上下文中以 new Function("viewer","Cesium", code)(viewer, Cesium) 执行，' +
       '可直接访问 viewer 与 Cesium 全局对象。' +
-      '工作流: 先 send_code 下发代码, 再 run_code 执行 —— run_code 会返回执行返回值或报错信息，' +
-      '若失败请根据报错修改代码后重试。',
+      '工作流: 写代码前先 search_experience 检索已验证经验（可用场景词 / API 名 / 报错关键词）；' +
+      '然后 send_code 下发代码, run_code 执行 —— run_code 返回执行返回值或报错；' +
+      '失败时按报错修改重试, 成功且有复用价值时用 save_experience 固化经验。',
   },
 );
 
@@ -293,6 +305,7 @@ mcp.registerTool(
     }
     try {
       const sid = sendToPage({ type: 'setCode', code }, sessionId);
+      lastCodeBySession.set(sid, code);
       return {
         content: [
           { type: 'text', text: `已推送 ${code.length} 字符到 session=${sid} 的编辑器。调用 run_code 执行（会返回执行结果或报错）。` },
@@ -338,12 +351,27 @@ mcp.registerTool(
         typeof outcome.payload === 'string' ? outcome.payload : JSON.stringify(outcome.payload ?? null);
       if (outcome.ok) {
         return {
-          content: [{ type: 'text', text: `执行成功 (session=${target.sessionId})，返回：${desc}` }],
+          content: [
+            {
+              type: 'text',
+              text:
+                `执行成功 (session=${target.sessionId})，返回：${desc}\n` +
+                '（若该代码模式有复用价值, 可调用 save_experience 固化为经验条目）',
+            },
+          ],
         };
       }
+      // 失败自动捕获为经验草稿（坑位），供后续检索与固化修法
+      let captureNote = '';
+      try {
+        const captured = captureFailure(lastCodeBySession.get(target.sessionId) ?? '', desc);
+        if (captured) {
+          captureNote = `\n（已自动捕获本次失败为经验草稿 ${captured.id}，修复后可调用 save_experience 固化修法）`;
+        }
+      } catch {}
       return {
         isError: true,
-        content: [{ type: 'text', text: `页面执行失败 (session=${target.sessionId})：${desc}` }],
+        content: [{ type: 'text', text: `页面执行失败 (session=${target.sessionId})：${desc}${captureNote}` }],
       };
     } catch (err) {
       return { isError: true, content: [{ type: 'text', text: err.message }] };
@@ -377,6 +405,100 @@ mcp.registerTool(
   },
 );
 
+// ---------------------------------------------------------------- 经验库工具
+mcp.registerTool(
+  'search_experience',
+  {
+    title: '检索经验库',
+    description:
+      '在经验库中检索写 Cesium 代码的已验证经验（坑位修法 / 代码范例 / 用法要点）。' +
+      '检索词可用: 场景意图（如"加载3DTiles""相机对准实体"）、API 名、或报错关键词（失败时按报错搜修法）。',
+    inputSchema: {
+      query: z.string().min(1).describe('检索词'),
+      limit: z.number().int().min(1).max(8).optional().describe('返回条数, 默认 3, 最多 8'),
+    },
+  },
+  async ({ query, limit }) => {
+    let hits;
+    try {
+      hits = searchExperience(query, limit ?? 3);
+    } catch (err) {
+      return { isError: true, content: [{ type: 'text', text: `经验库读取失败: ${err.message}` }] };
+    }
+    if (!hits.length) {
+      const top = listIndex()
+        .slice(0, 5)
+        .map((e) => e.title)
+        .join('；');
+      return {
+        content: [{ type: 'text', text: `未命中「${query}」。库内现有经验: ${top || '(空)'}。可换关键词重试。` }],
+      };
+    }
+    const lines = hits.map((h, i) => {
+      const m = h.entry;
+      const codeLines = m.code ? `\n   代码: ${m.code.split('\n').slice(0, 6).join('\n   ')}` : '';
+      return `${i + 1}. [${m.kind}/${m.status}] ${m.title} (id=${m.id}, 成功${m.successCount}次)\n   什么时候用: ${m.trigger || '(见全文)'}${codeLines}\n   完整内容: get_experience("${m.id}")`;
+    });
+    return { content: [{ type: 'text', text: `命中 ${hits.length} 条经验:\n${lines.join('\n')}` }] };
+  },
+);
+
+mcp.registerTool(
+  'get_experience',
+  {
+    title: '读取单条经验全文',
+    description: '按 id 读取一条经验的完整内容（含已验证代码与修法说明）。',
+    inputSchema: {
+      id: z.string().min(1).describe('经验条目 id（search_experience 返回的 id）'),
+    },
+  },
+  async ({ id }) => {
+    const entry = getEntryById(id);
+    if (!entry) {
+      return { isError: true, content: [{ type: 'text', text: `未找到经验条目 id=${id}，请用 search_experience 重新检索。` }] };
+    }
+    return { content: [{ type: 'text', text: entry.raw }] };
+  },
+);
+
+mcp.registerTool(
+  'save_experience',
+  {
+    title: '固化经验到经验库',
+    description:
+      '把一条已验证的经验写入经验库（Markdown 文件，人可读、可 git 版本化）。' +
+      'run_code 成功且代码模式有复用价值时调用；同名条目自动去重并累加成功次数。',
+    inputSchema: {
+      kind: z.enum(['pitfall', 'snippet', 'pattern']).describe('pitfall=坑位+修法, snippet=可复用代码, pattern=用法要点'),
+      title: z.string().min(1).describe('一句话标题, 具体到场景（如"3DTiles 大场景相机初始定位"）'),
+      code: z.string().optional().describe('已验证的代码'),
+      problem: z.string().optional().describe('pitfall: 现象或报错原文'),
+      fix: z.string().optional().describe('pitfall: 修法说明'),
+      trigger: z.string().optional().describe('什么时候用本条（一行触发条件, 不填自动生成）'),
+      tags: z.array(z.string()).optional().describe('意图关键词（中英文均可, 不要含逗号）'),
+      apis: z.array(z.string()).optional().describe('涉及的 Cesium API 名'),
+      errors: z.array(z.string()).optional().describe('典型报错签名（便于按报错检索）'),
+    },
+  },
+  async (input) => {
+    try {
+      const saved = saveExperience(input, { source: 'model' });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: saved.deduped
+              ? `已存在同名经验, 成功次数+1 (id=${saved.id})`
+              : `经验已固化: ${saved.file} (id=${saved.id})`,
+          },
+        ],
+      };
+    } catch (err) {
+      return { isError: true, content: [{ type: 'text', text: `保存失败: ${err.message}` }] };
+    }
+  },
+);
+
 // 资源: 连接状态 (客户端可按需拉取)
 mcp.registerResource(
   'status',
@@ -403,6 +525,26 @@ mcp.registerResource(
     ],
   }),
 );
+
+// 资源: 经验库索引 (人/客户端可浏览库中有什么)
+mcp.registerResource(
+  'experience-index',
+  'geoai://experience/index',
+  { title: '经验库索引', description: 'geoai 经验库条目清单（JSON）' },
+  async (uri) => ({
+    contents: [
+      {
+        uri: uri.href,
+        mimeType: 'application/json',
+        text: JSON.stringify({ store: storeDir(), count: listIndex().length, entries: listIndex() }, null, 2),
+      },
+    ],
+  }),
+);
+
+// ---------------------------------------------------------------- 经验库初始化
+ensureStore();
+log(`经验库已就绪: ${storeDir()} (${listIndex().length} 条)`);
 
 // ---------------------------------------------------------------- 启动 MCP (stdio)
 const transport = new StdioServerTransport();
