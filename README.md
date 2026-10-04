@@ -1,21 +1,50 @@
 # GeoAI
 
-把 Cesium 地球接入 MCP 客户端的桥接服务。npm 包名为 `geoai-mcp`（`geoai` 在 npm 上已被占用），原名 mini-mcp-cesium。链路：
+**GeoAI（npm 包名 `geoai-mcp`，`geoai` 已被占用）是一个 GIS 经验注入中间件——把一个经验丰富的 GIS 专家封装成 MCP 服务器。**
+
+你的 harness（Claude Code / Cursor / ZCode / WorkBuddy 等任何支持 MCP 的客户端）接入它之后，写 GIS 代码不再从零摸索：
+
+- **写之前**——`search_experience` 查真实踩坑的修法，`list_libs` 查已封装好的现成能力；
+- **写的时候**——优先调用 `kit.*`，常见坑位（相机锁定、后台动画暂停、加载顺序……）已在库里修掉；
+- **写完之后**——代码下发到真实 Cesium 地球上执行验证，失败自动捕获为经验草稿，跑通可固化为经验。
+
+**接入即获得经验，不改变你现有的工作流。**
+
+## 它是什么：三层能力 + 一个飞轮
 
 ```
-MCP 客户端（WorkBuddy / Claude Desktop / Cursor）
+你的 harness（Claude Code / Cursor / ZCode / WorkBuddy …）
    │  stdio (JSON-RPC)
    ▼
-geoai MCP Server (server.js)
-   │  WebSocket  ws://127.0.0.1:3001（可换端口；?session=xxx 多会话；可选 token 鉴权）
-   ▼
-浏览器页面（左侧 Monaco Editor + 右侧 Cesium 地球）
-   │  new Function('viewer','Cesium', code)
-   ▼
-Cesium 执行代码
+geoai MCP Server（经验注入中间件）
+   ├── 经验层  search_experience / get_experience / save_experience
+   │           20 条真实踩坑、全部实测验证的经验，随包分发，冷启动即专家
+   ├── 能力层  list_libs / get_lib_doc / send_snippet
+   │           kit.* 现成能力封装（相机飞行 / 影像地形 / 行政边界 / 高程采样），坑已在库里修掉
+   └── 执行层  open_page / send_code / run_code
+               浏览器里的真实 Cesium 地球（Monaco 编辑器 + WebSocket 执行）
+                    │  WebSocket  ws://127.0.0.1:3001（可换端口；?session=xxx 多会话；可选 token 鉴权）
+                    ▼
+              页面执行代码 → 返回执行结果 / 报错
 ```
 
-不做数据库、不做登录、不接 LLM、不做沙箱。代码由 MCP 客户端通过 `send_code` 传入。
+经验不是静态文档，而是一个飞轮：
+
+```
+ 检索经验 ──► 带着经验写代码 ──► 真实 Cesium 环境执行验证
+    ▲                                    │
+    │   失败 → 自动捕获为坑位草稿          │
+    └── 成功 → 固化为 verified 经验 ◄─────┘
+```
+
+为什么用 MCP 中间件而不是一份提示词或文档：
+
+1. **经验可执行验证**——每条经验都来自本项目真实运行，写错会立刻在真地球上暴露，而不是纸面对错；
+2. **经验自动生长**——`run_code` 失败自动落草稿、成功固化 verified、同名去重累加计数，越用越准；
+3. **两层互导**——经验命中时告知「⚡ 已封装为库： kit.xxx」，模型拿到修法的同时知道该调哪个库；
+4. **双通道分发**——MCP 之外，还支持把经验热集导出为 SKILL.md，不方便挂 MCP 的 harness 也能用（见第 5 节）。
+
+**定位边界**：面向 GIS 开发的通用经验，当前主线是 CesiumJS 三维可视化，后续按路线图扩展（见第 10 节）。不做数据库、不做登录、不接 LLM、不做沙箱，代码由 MCP 客户端通过 `send_code` 传入。
 
 ---
 
@@ -59,7 +88,7 @@ MCP 客户端配置见第 4 节。
 npm run dev:web    # 前端热更新 http://127.0.0.1:5173（open_page 仍指向 3000，见已知限制 #4）
 npm run typecheck # 库层类型检查（tsc --noEmit）
 npm test           # 内置自测客户端，自动拉起 server.js 驱动全流程
-npm run test:libs  # 能力库层自测（31 项：list_libs / get_lib_doc / send_snippet / kit.* 真飞）
+npm run test:libs  # 能力库层自测（60 项：list_libs / get_lib_doc / send_snippet / kit.* 真飞/真拉）
 ```
 
 启动后：
@@ -92,6 +121,7 @@ GeoAI/                # 仓库根目录即项目根
       cesium-kit-core/    # 契约层：createKit + 生命周期 + 断言
       cesium-kit-camera/  # 相机：flyToRegion / lookAtPoint / unlock / snapshot
       cesium-kit-imagery/ # 影像与地形：ArcGIS 免 key 底图/ 3D 地形 / 高程采样
+      cesium-kit-geojson/ # 行政边界：DataV 中国区划 GeoJSON 取数/加载/摘取下级
   tsconfig.json       # 库层类型检查配置（strict + noUncheckedIndexedAccess）
   test-client.js      # 模拟 MCP 客户端的端到端自测脚本
   test-libs.js        # 能力库层端到端自测（list_libs / get_lib_doc / send_snippet / kit.* 真飞）
@@ -186,14 +216,14 @@ npx 方式（包发布后推荐）：
 
 **多会话**：页面以 `?session=<id>` 打开即可多开（如 `http://127.0.0.1:3000/?session=dev`）；同一 id 后连入的页面会替换先连入的，未指定时均归属 `default` 会话。
 
-### 经验库（经验注入中间件）
+### 经验库（经验注入中间件的核心）
 
-geoai 不只是执行通道，还是经验沉淀层：模型据此写代码 → 运行 → 运行结果沉淀为新经验。
+geoai 不只是执行通道，更是经验沉淀层——这是它区别于普通「MCP 桥接 Cesium」方案的地方：模型据此写代码 → 运行 → 运行结果沉淀为新经验。
 
 - **存储**：默认就在**包目录的 `experience/`**——克隆使用时即仓库内，模型运行沉淀的经验直接落盘该目录，`git commit` 即分发（`GEOAI_EXPERIENCE_DIR` 可另指位置；以 `npx` 运行时写入的是包缓存，易失，长期使用建议克隆或另指目录）。**事实源是每条经验一个 Markdown 文件**（`experience/entries/*.md`，frontmatter 元数据 + 正文），人可直接编辑；`index.json` 为可重建缓存（gitignore）。
 - **三个来源**：① `run_code` 失败时自动落一条 draft 坑位（同一报错不重复捕获）；② 模型跑通后调 `save_experience` 主动固化（返回文本里有提示）；③ 人工直接编辑文件（改完下次检索立即生效，无需重启）。
 - **检索**：关键词打分（标题 5 / 报错签名 4 / tags 3 / API 3 / 正文 1），同分按成功次数排序。条目按**意图**组织（tags 里写场景关键词 + API 名 + 报错签名），不按 API 类组织。
-- **冷启动**：`experience/entries/` 内置 12 条已验证经验随仓库/包分发（本项目真实踩坑 + 实测：lookAt 解锁、后台 rAF、CDN 离线、Cesium/Monaco 加载顺序、ArcGIS 免费影像/地形等），新库直接可用，无需安装步骤。
+- **冷启动**：`experience/entries/` 内置 20 条已验证经验（全部 verified）随仓库/包分发（本项目真实踩坑 + 实测：lookAt 解锁、后台 rAF、CDN 离线、Cesium/Monaco 加载顺序、ArcGIS 免费影像/地形、DataV 中国行政边界、量测与绘制状态机、cesium-extends 集成等），新库直接可用，无需安装步骤。
 - **治理**：同名去重累加计数；draft 被修复固化后升级 verified；条目按成功次数与新鲜度淘汰（软上限 200，超出时提示清理）。
 - **与库层互导（A 方案）**：经验检索命中后若该条已被库封装，返回里会附一行
   「⚡ 已封装为库: kit.xxx —— 优先用库」；反向 `list_libs` 也会带出该库对应的坑位标题。
@@ -258,6 +288,7 @@ export function createCameraKit(kit: Kit): CameraKit {
 | --- | --- | --- |
 | `kit.camera` | `flyTo` / `flyToPoint` / `flyToRegion` / `lookAtPoint` / `unlock` / `snapshot` | `flyTo` 不返回 Promise（内部等 `moveEnd`）；`lookAt` 后相机锁定（飞行前自动解锁）；后台标签页 rAF 暂停（超时提示） |
 | `kit.imagery` | `addArcGisImagery` / `enableTerrain3D` / `disableTerrain` / `sampleHeight` / `tiandituImagery` / `removeAll` | ArcGIS 免 key 服务的 URL 与精度边界；天地图需自备 key |
+| `kit.geojson` | `fetchAdmin` / `loadAdmin` / `pickFeature` / `listFeatures` / `adminUrl` / `removeAll` | DataV 免 key 行政边界 URL 规律（adcode 三级实测）；叶子区域 `_full` 404 自动降级；`_full` 不含自身轮廓；GCJ-02 偏移提示 |
 
 ```js
 // 优先用库，而不是每次重写
@@ -357,12 +388,15 @@ npm publish        # prepare 钩子先自动重新构建；files 白名单保证
 > 私有项目可选择：① 保持 monorepo 内部依赖不单独发包；
 > ② 商业授权；③ 仅参考源码自行重写（注意 AGPL 不允许仅"借鉴"绕过许可）。
 
-## 10. 下一步建议
+## 10. 路线图
+
+围绕「经验注入中间件」的定位，按优先级：
 
 | 方向 | 说明 |
 | --- | --- |
+| 经验领域扩展 | 从 CesiumJS 三维可视化主线扩展到更广的 GIS 开发经验：坐标系统与投影、矢量瓦片、OGC 服务、空间分析、数据格式转换……目标是「GIS 开发的大多数常见经验，接入即得」 |
+| 扩充能力库 | 实体与图层管理、地形剖面、时间轴、量测绘制（cesium-extends 的 tooltip/popup/measure/drawer 以注入式重写进 kits） |
 | iframe 沙箱 | 把用户代码放进 `sandbox` iframe，`allow-scripts` + `postMessage` 返回结果/错误，替换 `new Function` |
 | 语义检索 | 经验检索从关键词打分升级为向量/语义检索（条目过千后再做） |
-| 场景库 | 内置 flyTo / 添加实体 / 地形剖面 / 时间轴 等预置代码片段，`send_snippet(name)` 工具 |
 | 自动重连 | 页面 WebSocket 断开后指数退避重连，替代「刷新页面恢复」 |
 | HTTP 传输 | 参考 cesium-mcp-runtime 增加 Streamable HTTP 传输，支持远程/云端 MCP host |

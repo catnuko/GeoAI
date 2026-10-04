@@ -55,6 +55,42 @@
       "experience": ["2026-10-04-arcgis-world-imagery-terrain3d"]
     },
     {
+      "id": "geojson",
+      "package": "@geoai/cesium-kit-geojson",
+      "source": "local",
+      "status": "ready",
+      "title": "行政边界数据",
+      "summary": "阿里 DataV.GeoJSON 中国行政区划在线数据（免 key）：按 adcode 取任意省市区轮廓或含下级边界，加载为 Cesium 数据源或拿原始 GeoJSON。",
+      "intents": [
+        "行政边界",
+        "行政区划",
+        "区划",
+        "边界",
+        "geojson",
+        "GeoJSON",
+        "adcode",
+        "省市县",
+        "轮廓",
+        "国界",
+        "DataV",
+        "阿里",
+        "中国边界",
+        "湖北",
+        "武汉",
+        "boundary",
+        "admin"
+      ],
+      "apis": [
+        "fetch",
+        "GeoJsonDataSource.load",
+        "viewer.dataSources.add",
+        "viewer.flyTo"
+      ],
+      "signature": "await kit.geojson.loadAdmin(420100) -> { ok, url, featureCount, geojson, dataSource } / await kit.geojson.fetchAdmin(adcode, { full })",
+      "snippet": "// 加载武汉市边界（贴地）并飞过去；想连下级区县一起加载传 { full: true }\nconst r = await kit.geojson.loadAdmin(420100, { flyTo: true });\nreturn { name: r.properties?.name, features: r.featureCount, url: r.url };",
+      "experience": ["2026-10-05-datav-china-geojson"]
+    },
+    {
       "id": "drawer",
       "package": "@geoai/cesium-kit-drawer",
       "source": "local",

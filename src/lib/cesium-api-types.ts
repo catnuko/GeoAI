@@ -29,6 +29,7 @@ import type {
   ArcGISTiledElevationTerrainProvider,
   Color,
   Entity,
+  GeoJsonDataSource,
   LabelCollection,
   NearFarScalar,
   BoundingSphere,
@@ -64,6 +65,7 @@ export type {
   ArcGISTiledElevationTerrainProvider,
   Color,
   Entity,
+  GeoJsonDataSource,
   LabelCollection,
   NearFarScalar,
   BoundingSphere,
@@ -113,6 +115,23 @@ export interface CesiumLike {
     terrainProvider: TerrainProvider,
     points: unknown[],
   ): Promise<{ height: number }[]>;
+  /** geojson 库需要：Color 常量取默认样式（withAlpha 等实例方法走完整 Color 类型） */
+  readonly Color: {
+    readonly CYAN: Color;
+    readonly YELLOW: Color;
+  };
+  /** geojson 库需要：静态 load 入口，把 GeoJSON/TopoJSON 转成 DataSource */
+  readonly GeoJsonDataSource: {
+    load(
+      data: unknown,
+      opts?: {
+        clampToGround?: boolean;
+        fill?: Color;
+        stroke?: Color;
+        strokeWidth?: number;
+      },
+    ): Promise<GeoJsonDataSource>;
+  };
 }
 
 /**
@@ -138,7 +157,7 @@ export interface CesiumInteractiveLike extends CesiumLike {
     distance(left: Cartesian3, right: Cartesian3): number;
     equals(left: Cartesian3, right: Cartesian3): boolean;
   };
-  readonly Color: {
+  readonly Color: CesiumLike['Color'] & {
     new (red?: number, green?: number, blue?: number, alpha?: number): Color;
     fromCssColorString(css: string): Color | undefined;
     fromRandomRgb(options?: unknown): Color;

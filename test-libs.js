@@ -139,10 +139,12 @@ return JSON.stringify({
   kitVersion: typeof kit !== 'undefined' ? kit.version : null,
   hasCamera: typeof kit !== 'undefined' && !!kit.camera,
   hasImagery: typeof kit !== 'undefined' && !!kit.imagery,
+  hasGeojson: typeof kit !== 'undefined' && !!kit.geojson,
   hasDrawer: typeof kit !== 'undefined' && !!kit.drawer,
   hasMeasure: typeof kit !== 'undefined' && !!kit.measure,
   hasOverlay: typeof kit !== 'undefined' && !!kit.overlay,
   cameraMethods: typeof kit !== 'undefined' && kit.camera ? Object.keys(kit.camera).filter(k => typeof kit.camera[k] === 'function') : [],
+  geojsonMethods: typeof kit !== 'undefined' && kit.geojson ? Object.keys(kit.geojson).filter(k => typeof kit.geojson[k] === 'function') : [],
   drawerMethods: typeof kit !== 'undefined' && kit.drawer ? Object.keys(kit.drawer).filter(k => typeof kit.drawer[k] === 'function') : [],
   measureMethods: typeof kit !== 'undefined' && kit.measure ? Object.keys(kit.measure).filter(k => typeof kit.measure[k] === 'function') : [],
   overlayMethods: typeof kit !== 'undefined' && kit.overlay ? Object.keys(kit.overlay).filter(k => typeof kit.overlay[k] === 'function') : [],
@@ -157,6 +159,12 @@ return JSON.stringify({
     check('kit.name === geoai', kitInfo.kitName === 'geoai');
     check('kit.camera 已挂载', kitInfo.hasCamera === true);
     check('kit.imagery 已挂载', kitInfo.hasImagery === true);
+    check('kit.geojson 已挂载', kitInfo.hasGeojson === true);
+    check(
+      'geojson 方法含 fetchAdmin/loadAdmin/pickFeature/listFeatures/removeAll',
+      ['fetchAdmin', 'loadAdmin', 'pickFeature', 'listFeatures', 'removeAll'].every((m) => (kitInfo.geojsonMethods || []).includes(m)),
+      (kitInfo.geojsonMethods || []).join(','),
+    );
     check(
       'camera 方法含 flyToRegion/lookAtPoint/unlock',
       ['flyToRegion', 'lookAtPoint', 'unlock'].every((m) => (kitInfo.cameraMethods || []).includes(m)),
@@ -223,6 +231,50 @@ return JSON.stringify({
     check('drawer 状态可读且为 INIT', beh.drawerStatus === 'INIT', beh.drawerStatus);
   } else {
     check('三 kit 行为探测返回可解析 JSON', false, behOut.text.slice(0, 300));
+  }
+
+  // ---------- 5c. geojson kit 实际拉数（真实请求 DataV 在线服务） ----------
+  out('\n【5c】geojson 行政边界（DataV 在线服务真拉）');
+  await call(client, 'send_code', {
+    code: `// 武汉市单区域（2026-10 实测 featureCount=1）+ 湖北下级清单（17 市）+ 加载武汉下级 13 区（贴地）
+const wuhan = await kit.geojson.fetchAdmin(420100);
+const hubei = await kit.geojson.fetchAdmin(420000, { full: true });
+const loaded = await kit.geojson.loadAdmin(420100, { full: true, clampToGround: true });
+const picked = kit.geojson.pickFeature(hubei.geojson, 420100);
+const removed = kit.geojson.removeAll();
+const e = loaded.dataSource.entities.values[0];
+return JSON.stringify({
+  wuhanName: wuhan.properties?.name,
+  wuhanCount: wuhan.featureCount,
+  wuhanLevel: wuhan.properties?.level,
+  hubeiCount: hubei.featureCount,
+  hubeiFirstChild: hubei.properties?.name,
+  listHasWuhan: kit.geojson.listFeatures(hubei.geojson).some(f => f.name === '武汉市'),
+  pickedAdcode: picked?.properties?.adcode ?? null,
+  loadedCount: loaded.featureCount,
+  dataSourceAdded: !!loaded.dataSource,
+  clamped: !!e?.polygon && e.polygon.height === undefined,
+  entityCount: loaded.dataSource.entities.values.length,
+  removedCount: removed.removed,
+});`,
+  });
+  const gjOut = await call(client, 'run_code', {});
+  const gj = parseRunJson(gjOut.text);
+  if (gj) {
+    out('  页面回传: ' + JSON.stringify(gj));
+    check('fetchAdmin 武汉市返回 1 feature', gj.wuhanCount === 1, String(gj.wuhanCount));
+    check('fetchAdmin 返回 properties.name=武汉市', gj.wuhanName === '武汉市', String(gj.wuhanName));
+    check('level=city', gj.wuhanLevel === 'city', String(gj.wuhanLevel));
+    check('fetchAdmin _full 湖北 17 个下级', gj.hubeiCount === 17, String(gj.hubeiCount));
+    check('_full 第一个下级是地级市', typeof gj.hubeiFirstChild === 'string' && gj.hubeiFirstChild.length > 1, String(gj.hubeiFirstChild));
+    check('listFeatures 清单含武汉市', gj.listHasWuhan === true);
+    check('pickFeature 按 adcode 摘到武汉', gj.pickedAdcode === 420100, String(gj.pickedAdcode));
+    check('loadAdmin 武汉 13 个区', gj.loadedCount === 13, String(gj.loadedCount));
+    check('loadAdmin 返回 dataSource 且已加入', gj.dataSourceAdded === true);
+    check('clampToGround 贴地生效', gj.clamped === true, String(gj.clamped));
+    check('removeAll 清理了数据源', gj.removedCount === 1, String(gj.removedCount));
+  } else {
+    check('geojson 行为探测返回可解析 JSON', false, gjOut.text.slice(0, 300));
   }
 
   // ---------- 6. flyToRegion真的驱动相机（验证坑：flyTo 不返回 Promise） ----------
