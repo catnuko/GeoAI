@@ -154,8 +154,11 @@ import './style.css';
       }
     };
     try {
-      // 验证用途：直接 new Function 执行，无沙箱。生产环境必须替换为 iframe/worker 沙箱。
-      const fn = new Function('viewer', 'Cesium', code);
+      // 验证用途：直接执行用户代码，无沙箱。生产环境必须替换为 iframe/worker 沙箱。
+      // 用 AsyncFunction 包装: 支持代码顶层 await（ArcGIS/影像/地形 provider 的 fromUrl 都是异步工厂）。
+      // async 函数体内的同步 throw 会变成 Promise 拒绝, 统一走下方 error 回执, 不影响 UX。
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+      const fn = new AsyncFunction('viewer', 'Cesium', code);
       const ret = fn(viewer, Cesium);
 
       Promise.resolve(ret).then(

@@ -16,9 +16,10 @@ source: manual
 
 ## 代码（已验证）
 ```js
-// 代码以 new Function('viewer','Cesium', code)(viewer, Cesium) 执行:
+// 代码以 AsyncFunction('viewer','Cesium', code) 包装执行:
 // - viewer: Cesium.Viewer 实例 (页面右侧地球)
 // - Cesium: CesiumJS 全局对象
+// - 支持顶层 await (provider 的 fromUrl 等异步工厂可直接 await)
 // 没有其他注入变量; 需要 DOM/网络等走页面原生能力, 同源权限全部可用(无沙箱)。
 return typeof viewer + '/' + typeof Cesium; // "object/object"
 ```

@@ -204,7 +204,7 @@ viewer.camera.flyTo({
 
 ## 7. 已知限制（重要）
 
-1. **无沙箱**：页面用 `new Function('viewer','Cesium', code)(viewer, Cesium)` 直接执行 MCP 客户端下发的代码。
+1. **无沙箱**：页面用 `AsyncFunction("viewer","Cesium", code)` 包装执行 MCP 客户端下发的代码（支持顶层 await）。
    该代码拥有页面同源的全部权限（DOM、网络、存储）。**本项目仅限本地验证用途，生产必须替换为 iframe sandbox + postMessage，或 Web Worker + 独立 origin。**
 2. **Cesium.js 必须先于 monaco loader.js 加载**（顺序敏感，改动 `index.html` 时勿调换）：
    Cesium 打包产物内含 UMD 模块（如 `ipv6`），会检测全局 `define.amd`。

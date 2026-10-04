@@ -241,7 +241,7 @@ const mcp = new McpServer(
     capabilities: { tools: {}, resources: {} },
     instructions:
       '通过 WebSocket 把 JavaScript 推送到内嵌 Cesium 地球的页面并执行。' +
-      '代码在页面上下文中以 new Function("viewer","Cesium", code)(viewer, Cesium) 执行，' +
+      '代码以 AsyncFunction("viewer","Cesium", code) 包装执行（支持顶层 await，可直接 await provider 的 fromUrl），' +
       '可直接访问 viewer 与 Cesium 全局对象。' +
       '工作流: 写代码前先 search_experience 检索已验证经验（可用场景词 / API 名 / 报错关键词）；' +
       '然后 send_code 下发代码, run_code 执行 —— run_code 返回执行返回值或报错；' +
