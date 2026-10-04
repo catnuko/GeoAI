@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 catnuko <https://github.com/catnuko>
 /**
  * test-client.js —— 模拟一个 MCP 客户端，端到端验证链路：
  *   MCP Client --stdio--> server.js --WS--> 浏览器页面 --new Function--> Cesium

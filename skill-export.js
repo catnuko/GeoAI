@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 catnuko <https://github.com/catnuko>
 /**
  * geoai :: skill-export.js
  *

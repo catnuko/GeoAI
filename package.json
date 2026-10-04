@@ -1,8 +1,12 @@
 {
   "name": "geoai-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "GeoAI —— 把 Cesium 地球接入 MCP 客户端的桥接服务（MCP stdio → WebSocket → 浏览器页面执行）",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
+  "author": {
+    "name": "catnuko",
+    "url": "https://github.com/catnuko"
+  },
   "type": "module",
   "main": "server.js",
   "bin": {
@@ -14,7 +18,9 @@
     "skill-export.js",
     "experience/entries",
     "dist",
-    "README.md"
+    "README.md",
+    "THIRD-PARTY-LICENSES.md",
+    "COMMERCIAL-LICENSE.md"
   ],
   "keywords": [
     "mcp",
