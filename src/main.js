@@ -1,0 +1,231 @@
+/* mini-mcp-cesium :: src/main.js  （Vite 入口）
+ * 页面侧：
+ *   - 初始化 Cesium Viewer（合规影像源，未配置 key 时退化为无影像地球）
+ *   - 初始化 Monaco Editor（初始示例代码）
+ *   - 连接 ws://127.0.0.1:3001，接收 MCP Server 下发的 setCode / runCode
+ *
+ * Cesium / Monaco 仍由 index.html 用 CDN <script> 加载（不打包），
+ * 因此这里读 window.Cesium / window.monaco / window.require。
+ */
+import './style.css';
+
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------- 配置
+  const WS_URL = 'ws://127.0.0.1:3001';
+
+  /** 天地图（合规影像源）token。未申请请保持占位符字符串，此时地球以纯色 + 经纬网渲染。
+   *  申请入口：天地图官网 http://lbs.tianditu.gov.cn/ → 控制台 → 创建新应用 → 服务接口 → 申请 Key */
+  const TIANDITU_TK = 'key="Please apply for your own key at the Tianditu Platform and replace this placeholder"';
+
+  const INITIAL_CODE = [
+    '// 由 MCP send_code 推送的代码会覆盖这里',
+    '// 可用变量: viewer (Cesium Viewer), Cesium (CesiumJS 全局)',
+    'viewer.camera.flyTo({',
+    '  destination: Cesium.Cartesian3.fromDegrees(121.4737, 31.2304, 8000000),',
+    '  duration: 2.0',
+    '});',
+  ].join('\n');
+
+  // ---------------------------------------------------------------- DOM
+  const wsStatusEl = document.getElementById('wsStatus');
+  const logPane = document.getElementById('logPane');
+  const runResultEl = document.getElementById('runResult');
+  const runBtn = document.getElementById('runBtn');
+
+  function log(msg, kind) {
+    const line = document.createElement('div');
+    if (kind) line.className = kind === 'err' ? 'l-err' : 'l-ok';
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    logPane.appendChild(line);
+    logPane.scrollTop = logPane.scrollHeight;
+  }
+
+  function setRunResult(text, kind) {
+    runResultEl.textContent = text;
+    runResultEl.className = 'run-result' + (kind ? ' ' + kind : '');
+  }
+
+  // ---------------------------------------------------------------- Cesium
+  let viewer;
+  function initCesium() {
+    if (typeof window.Cesium === 'undefined') {
+      throw new Error(
+        'CesiumJS 未加载成功。请检查网络能否访问 cdn.jsdelivr.net；' +
+          '注意 Cesium.js 必须在 monaco loader.js 之前加载（Cesium 内含 UMD 模块，会与 AMD define 冲突）。',
+      );
+    }
+    const hasTiandituKey = TIANDITU_TK && !TIANDITU_TK.startsWith('key="Please apply');
+
+    const options = {
+      baseLayerPicker: false,
+      geocoder: false,
+      homeButton: false,
+      sceneModePicker: false,
+      navigationHelpButton: false,
+      animation: false,
+      timeline: false,
+      fullscreenButton: false,
+      infoBox: false,
+      selectionIndicator: false,
+      baseLayer: false,
+    };
+
+    viewer = new Cesium.Viewer('cesiumContainer', options);
+
+    if (hasTiandituKey) {
+      // 天地图影像（Web Mercator WMTS，CGCS2000/WGS84 近似一致）
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url:
+            'https://t{s}.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
+            '&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles' +
+            '&TILEMATRIX={TileMatrix}&TILEROW={TileRow}&TILECOL={TileCol}&tk=' + TIANDITU_TK,
+          subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'],
+          maximumLevel: 18,
+        }),
+      );
+      log('底图：天地图影像');
+    } else {
+      // 未配置合规影像 key：仍渲染完整地球几何 + 经纬网 + 大气，桥接链路可正常验证
+      viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#2b3a55');
+      viewer.scene.globe.showGraticule = true;
+      viewer.scene.skyAtmosphere.show = true;
+      log('未配置天地图 key：以纯色地球 + 经纬网渲染（不影响 MCP 桥接验证）', 'err');
+    }
+
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(121.4737, 31.2304, 18000000),
+    });
+    window.viewer = viewer; // 便于控制台手动调试
+  }
+
+  // ---------------------------------------------------------------- Monaco
+  let editor;
+  function initMonaco() {
+    return new Promise((resolve, reject) => {
+      // ESM 模块作用域没有 require / monaco 标识符，必须从 window 取
+      // （它们由 index.html 里的 Monaco AMD loader 注入）
+      const amdRequire = window.require;
+      if (typeof amdRequire !== 'function') {
+        return reject(new Error('Monaco AMD loader 未加载（检查 index.html 中的 loader.js）'));
+      }
+      amdRequire(['vs/editor/editor.main'], () => {
+        const monacoNs = window.monaco;
+        if (!monacoNs) return reject(new Error('monaco 命名空间未就绪'));
+        editor = monacoNs.editor.create(document.getElementById('editor'), {
+          value: INITIAL_CODE,
+          language: 'javascript',
+          theme: 'vs',
+          automaticLayout: true,
+          minimap: { enabled: false },
+          fontSize: 13,
+          scrollBeyondLastLine: false,
+        });
+        window.editor = editor;
+        resolve();
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------- 执行
+  function runCode() {
+    const code = editor.getValue();
+    setRunResult('执行中…');
+    try {
+      // 验证用途：直接 new Function 执行，无沙箱。生产环境必须替换为 iframe/worker 沙箱。
+      const fn = new Function('viewer', 'Cesium', code);
+      const ret = fn(viewer, Cesium);
+
+      Promise.resolve(ret).then(
+        (val) => {
+          const desc = val === undefined ? 'undefined' : JSON.stringify(val);
+          setRunResult('✅ 执行成功，返回：' + desc, 'ok');
+          log('执行成功，返回 ' + desc, 'ok');
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'result', payload: String(desc) }));
+          }
+        },
+        (err) => {
+          const msg = err && err.message ? err.message : String(err);
+          setRunResult('❌ 执行失败：' + msg, 'err');
+          log('执行失败: ' + msg, 'err');
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'error', payload: msg }));
+          }
+        },
+      );
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e);
+      setRunResult('❌ 运行错误：' + msg, 'err');
+      log('运行错误: ' + msg, 'err');
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'error', payload: msg }));
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- WebSocket
+  let ws = null;
+  function connectWS() {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      wsStatusEl.textContent = 'WebSocket: 已连接';
+      wsStatusEl.className = 'badge badge-on';
+      log('WebSocket 已连接到 ' + WS_URL, 'ok');
+    };
+
+    ws.onmessage = (ev) => {
+      let msg;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (msg.type === 'hello') {
+        log('服务端消息: ' + msg.message);
+      } else if (msg.type === 'setCode') {
+        editor.setValue(msg.code);
+        setRunResult('代码已更新（来自 send_code），等待 run_code');
+        log('收到 setCode，编辑器内容已更新（' + msg.code.length + ' 字符）');
+      } else if (msg.type === 'runCode') {
+        runCode();
+      }
+    };
+
+    ws.onclose = () => {
+      wsStatusEl.textContent = 'WebSocket: 已断开';
+      wsStatusEl.className = 'badge badge-off';
+      log('WebSocket 已断开', 'err');
+    };
+
+    ws.onerror = () => {
+      wsStatusEl.textContent = 'WebSocket: 错误';
+      wsStatusEl.className = 'badge badge-off';
+      log('WebSocket 错误（server.js 是否在运行？）', 'err');
+    };
+  }
+
+  // ---------------------------------------------------------------- 启动
+  runBtn.addEventListener('click', runCode);
+
+  // Cesium 必须在 Monaco 之前就绪；任一初始化失败都把原因显示到页面，不静默失败
+  try {
+    initCesium();
+  } catch (e) {
+    log('Cesium 初始化失败: ' + e.message, 'err');
+    setRunResult('❌ Cesium 初始化失败：' + e.message, 'err');
+  }
+
+  initMonaco()
+    .then(() => {
+      log('Cesium + Monaco 初始化完成');
+      connectWS();
+    })
+    .catch((e) => {
+      log('Monaco 初始化失败: ' + e.message, 'err');
+      setRunResult('❌ Monaco 初始化失败：' + e.message, 'err');
+    });
+})();

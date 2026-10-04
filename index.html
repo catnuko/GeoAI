@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mini-mcp-cesium · MCP → WebSocket → Cesium 桥接验证</title>
+
+    <!-- CesiumJS 静态资源基址（widgets / workers / assets 从 CDN 加载） -->
+    <script>
+      window.CESIUM_BASE_URL = 'https://cdn.jsdelivr.net/npm/cesium@1.121.1/Build/Cesium/';
+    </script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.121.1/Build/Cesium/Widgets/widgets.css" />
+
+    <!--
+      加载顺序要求：Cesium 必须先于 Monaco AMD loader 执行。
+      原因：Cesium 打包产物内含 UMD 模块（如 ipv6），会检测全局 define.amd；
+      若 Monaco 的 loader.js 先执行并注入 define，Cesium 会走 define(t) 分支，
+      而 Monaco loader 拒绝匿名 define（"Can only have one anonymous define call per script file"），
+      导致 Cesium 脚本抛错中断、window.Cesium 未定义。
+    -->
+    <script src="https://cdn.jsdelivr.net/npm/cesium@1.121.1/Build/Cesium/Cesium.js"></script>
+
+    <!-- Monaco Editor：AMD loader -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+    <script>
+      require.config({
+        paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' },
+      });
+    </script>
+  </head>
+  <body>
+    <header id="topbar">
+      <span class="brand">mini-mcp-cesium</span>
+      <span id="wsStatus" class="badge badge-off">WebSocket: 连接中…</span>
+      <span class="hint">MCP → stdio → WS :3001 → 本页 → Cesium</span>
+      <button id="runBtn" type="button" title="等价于 MCP 工具 run_code">▶ 运行编辑器代码</button>
+    </header>
+
+    <main id="layout">
+      <section id="leftPane">
+        <div class="pane-title">JavaScript（可用 viewer / Cesium）</div>
+        <div id="editor"></div>
+        <div id="logPane" class="log-pane"></div>
+      </section>
+      <section id="rightPane">
+        <div class="pane-title">Cesium 地球</div>
+        <div id="cesiumContainer"></div>
+        <div id="runResult" class="run-result">等待执行…</div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
