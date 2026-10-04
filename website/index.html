@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GeoAI — GIS 经验注入中间件 · 把 GIS 专家封装成 MCP 服务器</title>
+    <meta
+      name="description"
+      content="GeoAI 是一个 GIS 经验注入中间件：把经验丰富的 GIS 专家封装成 MCP 服务器。三层能力（经验库 / 能力库 / 真实 Cesium 执行验证）+ 一个经验飞轮，接入即获得经验。"
+    />
+    <meta name="theme-color" content="#08090c" />
+    <meta property="og:title" content="GeoAI — GIS 经验注入中间件" />
+    <meta
+      property="og:description"
+      content="把经验丰富的 GIS 专家封装成 MCP 服务器。写之前查经验，写的时候调 kit，写完之后到真实 Cesium 地球验证。"
+    />
+    <meta property="og:type" content="website" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2308090c'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%23fff' stroke-width='2'/%3E%3Cellipse cx='16' cy='16' rx='11' ry='4.5' fill='none' stroke='%23fff' stroke-width='1.6' opacity='.8' transform='rotate(22 16 16)'/%3E%3Ccircle cx='23' cy='8' r='2.4' fill='%23fff'/%3E%3C/svg%3E"
+    />
+
+    <!-- 首帧防闪烁：优先应用已保存的主题 -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('geoai-theme');
+          if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+          var l = localStorage.getItem('geoai-lang');
+          if (l === 'en') document.documentElement.setAttribute('lang', 'en');
+        } catch (e) {}
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <nav id="nav" class="sc-nav" aria-label="主导航"></nav>
+    <main id="app"></main>
+    <footer id="footer" class="sc-footer"></footer>
+
+    <noscript>
+      <div style="padding: 48px 24px; text-align: center; color: #f4f5f7; font-family: sans-serif">
+        GeoAI 官网需要启用 JavaScript 才能渲染。 / This site requires JavaScript.
+      </div>
+    </noscript>
+
+    <script src="content.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
