@@ -9,13 +9,13 @@
  * 定位: 导出视图, 不是事实源。
  *   - 经验的事实源在 $GEOAI_EXPERIENCE_DIR（默认 <包目录>/experience，随仓库分发），
  *     模型在运行中沉淀的新经验不会自动进入已导出的 skill —— 库更新后重新执行本命令即可。
- *   - 能力清单的事实源是 src/lib/registry.json，随代码分发，改动后同样需要重新导出。
+ *   - 能力清单的事实源是 kits/registry.json，随代码分发，改动后同样需要重新导出。
  * skill 正文只放热集（按成功次数排序取 top N）；长尾与最新经验引导模型调用 geoai MCP 的
  * search_experience 工具实时检索。
  *
  * 用法:
- *   node skill-export.js                       # 输出 ./geoai-cesium-experience/SKILL.md, top 12
- *   node skill-export.js --out<dir> --top 20
+ *   node scripts/skill-export.js                       # 输出 ./geoai-cesium-experience/SKILL.md, top 12
+ *   node scripts/skill-export.js --out<dir> --top 20
  */
 
 import fs from 'node:fs';
@@ -60,7 +60,7 @@ function fmtKits(index) {
     '## 能力库清单（优先使用，不要重写）',
     '',
     '> 这些能力已内置常见坑位的修法（相机锁定 / flyTo 不返回 Promise / 后台动画不推进等）。',
-    '> 执行上下文变量：`viewer`、`Cesium`、`kit`。库代码事实源为 `src/lib/registry.json`。',
+    '> 执行上下文变量：`viewer`、`Cesium`、`kit`。库代码事实源为 `kits/registry.json`。',
     '',
   ];
   for (const k of ready) {
@@ -98,7 +98,7 @@ export function renderSkill(top) {
     '',
     `> 本文件由 \`npm run export-skill\` 自动导出（${today}, 共 ${top.length} 条经验 + ${listKits().filter((k) => k.status === 'ready').length} 个能力库）。`,
     `> 经验事实源: \`${storeDir()}\`（模型运行中会持续沉淀新经验, 本文件不会自动更新 —— 库更新后请重新导出）。`,
-    `> 能力清单事实源: \`src/lib/registry.json\`。`,
+    `> 能力清单事实源: \`kits/registry.json\`。`,
     '> 这里只是热集: 长尾经验请调用 geoai MCP 的 `search_experience` / `list_libs` 实时检索。',
     '',
     // 固定章节（对照 WorkBuddy 专家包 agents/*.md 的 Mission / Critical Rules / Workflow 组织方式）
@@ -159,7 +159,7 @@ function main() {
   fs.writeFileSync(file, skill, 'utf8');
   console.log(`已导出 ${top.length} 条经验热集 + ${listKits().filter((k) => k.status === 'ready').length} 个能力库 → ${file}`);
   for (const w of warns) console.log(`  WARN: ${w}`);
-  console.log(`（事实源: ${storeDir()} / src/lib/registry.json; 库更新后重新运行 npm run export-skill 即可）`);
+  console.log(`（事实源: ${storeDir()} / kits/registry.json; 库更新后重新运行 npm run export-skill 即可）`);
 }
 
 // 被 expert-export.js import 时（argv[1] 指向别的文件）不触发 CLI

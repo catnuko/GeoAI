@@ -6,7 +6,7 @@
  *
  * 用法:
  *   node test-client.js
- *   浏览器打不开时手动访问 http://127.0.0.1:3000 后重跑。
+ *   浏览器打不开时手动访问 http://127.0.0.1:3000/playgrounds/cesium/ 后重跑。
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -39,7 +39,7 @@ async function call(client, name, args) {
 async function main() {
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [path.join(__dirname, 'server.js')],
+    args: [path.join(__dirname, '..', 'scripts', 'server.js')],
     stderr: 'inherit', // 让 server.js 的日志直接透出，便于观察
   });
 
@@ -53,7 +53,7 @@ async function main() {
   // 1. 打开页面（会调 open() 拉起默认浏览器）
   const opened = await call(client, 'open_page');
   if (opened?.isError) {
-    out('\n浏览器似乎未自动打开。请手动访问 http://127.0.0.1:3000 ，然后重新运行本脚本。');
+    out('\n浏览器似乎未自动打开。请手动访问 http://127.0.0.1:3000/playgrounds/cesium/ ，然后重新运行本脚本。');
   }
 
   out('\n等待 3 秒让页面完成初始化…');

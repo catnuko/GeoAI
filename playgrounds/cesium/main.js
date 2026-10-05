@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 catnuko <https://github.com/catnuko>
-/* geoai :: src/main.js  （Vite 入口）
+/* geoai :: playgrounds/cesium/main.js  （Cesium 试炼场页面入口，Vite 构建）
  * 页面侧：
  *   - 初始化 Cesium Viewer（合规影像源，未配置 key 时退化为无影像地球）
  *   - 初始化 Monaco Editor（初始示例代码）
  *   - 连接 MCP Server 的 WebSocket（地址优先读 /config.json），接收 setCode / runCode
  *
- * Cesium / Monaco 仍由 index.html 用 CDN <script> 加载（不打包），
+ * Cesium / Monaco 仍由本目录 index.html 用 CDN <script> 加载（不打包），
  * 因此这里读 window.Cesium / window.monaco / window.require。
  */
 import './style.css';
-import { mountKits, getRegistry } from './lib/index';
+import { mountKits, getRegistry } from '../../kits/index';
 
 const registryKits = getRegistry().kits.filter((k) => k.status === 'ready');
 
@@ -23,7 +23,7 @@ const registryKits = getRegistry().kits.filter((k) => k.status === 'ready');
   const DEFAULT_WS_URL = 'ws://127.0.0.1:3001';
   async function resolveWsUrl() {
     try {
-      const res = await fetch('config.json', { cache: 'no-store' });
+      const res = await fetch('/config.json', { cache: 'no-store' });
       if (res.ok) {
         const cfg = await res.json();
         if (cfg && typeof cfg.wsUrl === 'string' && cfg.wsUrl) return cfg.wsUrl;
@@ -176,7 +176,7 @@ const registryKits = getRegistry().kits.filter((k) => k.status === 'ready');
       // 验证用途：直接执行用户代码，无沙箱。生产环境必须替换为 iframe/worker 沙箱。
       // 用 AsyncFunction 包装: 支持代码顶层 await（ArcGIS/影像/地形 provider 的 fromUrl 都是异步工厂）。
       // async 函数体内的同步 throw 会变成 Promise 拒绝, 统一走下方 error 回执, 不影响 UX。
-      // 第三个参数 kit 是能力库层入口（src/lib/），未挂载时为 undefined，老代码不受影响。
+      // 第三个参数 kit 是能力库层入口（kits/），未挂载时为 undefined，老代码不受影响。
       const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
       const fn = new AsyncFunction('viewer', 'Cesium', 'kit', code);
       const ret = fn(viewer, Cesium, kit);

@@ -13,11 +13,11 @@
  *   skill（skills/geoai-cesium-experience, 经 agents frontmatter 的 skills 字段预加载）随包分发。
  *
  * 用法:
- *   node expert-export.js                          # 输出 ./geoai-cesium-expert/
- *   node expert-export.js --out <dir> [--force]
- *   node expert-export.js --install [--force]      # 生成并直装 ~/.workbuddy my-experts（WorkBuddy 自动检测）
- *   node expert-export.js --check <dir>            # 只校验已有专家包
- *   node expert-export.js --zh-name 极图 --en-name Geoai   # 自定义花名
+ *   node scripts/expert-export.js                          # 输出 ./geoai-cesium-expert/
+ *   node scripts/expert-export.js --out <dir> [--force]
+ *   node scripts/expert-export.js --install [--force]      # 生成并直装 ~/.workbuddy my-experts（WorkBuddy 自动检测）
+ *   node scripts/expert-export.js --check <dir>            # 只校验已有专家包
+ *   node scripts/expert-export.js --zh-name 极图 --en-name Geoai   # 自定义花名
  */
 
 import fs from 'node:fs';
@@ -94,7 +94,7 @@ const QUICK_PROMPTS = [
 
 function repoVersion() {
   try {
-    return JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
+    return JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
   } catch {
     return '0.0.0';
   }
@@ -178,10 +178,10 @@ skills: [${SKILL_DIR}]
 function buildPkgReadme({ date, entryCount, kitCount }) {
   return `# ${PKG_NAME} — WorkBuddy 专家包
 
-由 [geoai-mcp](https://github.com/catnuko/GeoAI) \`node expert-export.js\` 自动导出于 ${date}。
+由 [geoai-mcp](https://github.com/catnuko/GeoAI) \`node scripts/expert-export.js\` 自动导出于 ${date}。
 
 - 内容: \`.codebuddy-plugin/plugin.json\`（专家元数据）+ \`agents/\`（人格提示词）+ \`skills/${SKILL_DIR}/\`（经验热集, ${entryCount} 条经验 + ${kitCount} 个能力库中的热集）+ \`avatars/\`（占位头像）
-- 事实源: geoai-mcp 仓库的 \`experience/entries/*.md\` 与 \`src/lib/registry.json\`；本包只是导出视图, 库更新后重新导出
+- 事实源: geoai-mcp 仓库的 \`experience/entries/*.md\` 与 \`kits/registry.json\`；本包只是导出视图, 库更新后重新导出
 - 安装: 复制本目录到 \`~/.workbuddy/plugins/marketplaces/my-experts/plugins/\`（或导出时加 \`--install\`）
 - 上架开放平台前: 替换 \`avatars/expert.png\` 占位头像（512×512 插画风）, 按需修改 displayName 花名与 displayDescription
 `;
@@ -336,8 +336,8 @@ function usage(msg) {
     [
       '',
       '用法:',
-      '  node expert-export.js [--out <dir>] [--force] [--install] [--zh-name 极图] [--en-name Geoai] [--version 1.0.0]',
-      '  node expert-export.js --check <dir>   # 只校验已有专家包',
+      '  node scripts/expert-export.js [--out <dir>] [--force] [--install] [--zh-name 极图] [--en-name Geoai] [--version 1.0.0]',
+      '  node scripts/expert-export.js --check <dir>   # 只校验已有专家包',
     ].join('\n'),
   );
   return false;

@@ -8,19 +8,14 @@
     "url": "https://github.com/catnuko"
   },
   "type": "module",
-  "main": "server.js",
+  "main": "scripts/server.js",
   "bin": {
-    "geoai-mcp": "server.js"
+    "geoai-mcp": "scripts/server.js"
   },
   "files": [
-    "server.js",
-    "experience.js",
-    "experience-cli.js",
-    "lib-registry.js",
-    "skill-export.js",
-    "expert-export.js",
+    "scripts",
     "experience/entries",
-    "src/lib",
+    "kits",
     "dist",
     "README.md",
     "THIRD-PARTY-LICENSES.md",
@@ -45,12 +40,12 @@
     "build": "vite build",
     "build:check": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "start": "node server.js",
-    "test": "node test-client.js",
-    "test:libs": "node test-libs.js",
-    "export-skill": "node skill-export.js",
-    "export-expert": "node expert-export.js",
-    "lint:exp": "node experience-cli.js lint",
+    "start": "node scripts/server.js",
+    "test": "node tests/test-client.js",
+    "test:libs": "node tests/test-libs.js",
+    "export-skill": "node scripts/skill-export.js",
+    "export-expert": "node scripts/expert-export.js",
+    "lint:exp": "node scripts/experience-cli.js lint",
     "prepare": "vite build"
   },
   "engines": {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 catnuko <https://github.com/catnuko>
 /**
- * src/lib/index.ts —— 库层装配入口（页面侧唯一挂载点）
+ * kits/index.ts —— 库层装配入口（页面侧唯一挂载点）
  *
  * 职责：
  *   1. 用 createKit 把 Cesium 实例注入到各能力库（注入式的"注入口"在这里）

@@ -41,7 +41,7 @@ import { getRegistry } from './lib-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENTRIES_DIR = path.join(storeDir(), 'entries'); // 与 experience.js 的目录布局一致
-const SKILL_OUT = path.join(__dirname, 'geoai-cesium-experience', 'SKILL.md'); // skill-export 的默认输出位
+const SKILL_OUT = path.join(__dirname, '..', 'geoai-cesium-experience', 'SKILL.md'); // skill-export 的默认输出位
 
 // 严格行格式：真 YAML 解析器（harness 加载 SKILL.md / 未来工具链）对 `key:value`（冒号后无空格）
 // 会把整行当 key 静默解析失败 —— 本仓库一律要求 `key: value`。
@@ -135,7 +135,7 @@ export function validateSkillMd(text) {
 
 function lintExports(issues) {
   if (!fs.existsSync(SKILL_OUT)) {
-    issues.push({ file: path.relative(__dirname, SKILL_OUT), items: [{ level: 'INFO', msg: '未导出（npm run export-skill 可生成热集视图）' }] });
+    issues.push({ file: path.relative(path.join(__dirname, '..'), SKILL_OUT), items: [{ level: 'INFO', msg: '未导出（npm run export-skill 可生成热集视图）' }] });
     return;
   }
   const items = [];
@@ -144,14 +144,14 @@ function lintExports(issues) {
   for (const msg of warns) items.push({ level: 'WARN', msg });
   const newestSource = Math.max(
     ...listEntryFiles().map((f) => fs.statSync(path.join(ENTRIES_DIR, f)).mtimeMs),
-    fs.existsSync(path.join(__dirname, 'src', 'lib', 'registry.json'))
-      ? fs.statSync(path.join(__dirname, 'src', 'lib', 'registry.json')).mtimeMs
+    fs.existsSync(path.join(__dirname, '..', 'kits', 'registry.json'))
+      ? fs.statSync(path.join(__dirname, '..', 'kits', 'registry.json')).mtimeMs
       : 0,
   );
   if (fs.statSync(SKILL_OUT).mtimeMs < newestSource) {
     items.push({ level: 'WARN', msg: '导出物早于最新事实源修改时间 —— 库更新后请重新 npm run export-skill' });
   }
-  issues.push({ file: path.relative(__dirname, SKILL_OUT), items });
+  issues.push({ file: path.relative(path.join(__dirname, '..'), SKILL_OUT), items });
 }
 
 function cmdLint() {
@@ -205,7 +205,7 @@ function cmdLint() {
   for (const kit of reg.kits ?? []) {
     for (const expId of kit.experience ?? []) {
       if (!allIds.has(expId)) {
-        issues.push({ file: `src/lib/registry.json (kit.${kit.id})`, items: [{ level: 'ERROR', msg: `experience 引用断链: ${expId}` }] });
+        issues.push({ file: `kits/registry.json (kit.${kit.id})`, items: [{ level: 'ERROR', msg: `experience 引用断链: ${expId}` }] });
       }
     }
   }

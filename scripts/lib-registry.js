@@ -4,14 +4,14 @@
 /**
  * geoai :: lib-registry.js
  *
- * 能力清单（库层）的 Node 侧读取与检索。事实源是 src/lib/registry.json。
+ * 能力清单（库层）的 Node 侧读取与检索。事实源是 kits/registry.json。
  *
  * 与 experience.js 的分工：
  *   experience.js  管「坑与用法」（Markdown 条目，按意图检索）
  *   lib-registry.js 管「有哪些库、怎么调」（registry.json，按意图/api 检索）
  *   两者通过 entry.experience 字段双向关联，检索时合并返回给模型。
  *
- * 边界：本文件只读 JSON，不引入任何浏览器侧代码（src/lib/*.js 依赖 window.Cesium）。
+ * 边界：本文件只读 JSON，不引入任何浏览器侧代码（kits/*.ts 依赖 window.Cesium）。
  */
 
 import fs from 'node:fs';
@@ -20,11 +20,11 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 /**
- * registry.json 可能随包发布（files 白名单里的 src/lib/registry.json），
+ * registry.json 可能随包发布（files 白名单里的 kits/registry.json），
  * 也可能被 GEOAI_EXPERIENCE_DIR 之类的路径覆盖 —— 但库清单属于代码而非数据，
  * 所以路径固定相对本文件解析，不提供环境变量覆盖。
  */
-const REGISTRY_URL = new URL('./src/lib/registry.json', import.meta.url);
+const REGISTRY_URL = new URL('../kits/registry.json', import.meta.url);
 
 let cache = null;
 

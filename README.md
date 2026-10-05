@@ -92,7 +92,7 @@ npm run test:libs  # 能力库层自测（60 项：list_libs / get_lib_doc / sen
 ```
 
 启动后：
-- HTTP 静态服务： http://127.0.0.1:3000 （托管 `dist/`，页面通过 `/config.json` 获取 WS 地址）
+- HTTP 静态服务： http://127.0.0.1:3000/playgrounds/cesium/ （托管 `dist/`，页面通过 `/config.json` 获取 WS 地址）
 - WebSocket： ws://127.0.0.1:3001
 - 端口被占用或想并行多实例时，用环境变量 `GEOAI_HTTP_PORT` / `GEOAI_WS_PORT` 覆盖（见第 4 节）。
 
@@ -100,52 +100,64 @@ npm run test:libs  # 能力库层自测（60 项：list_libs / get_lib_doc / sen
 
 ## 3. 目录结构
 
+在本仓库开发（或让 AI 改代码）时，**工程红线与修改指南统一见 [AGENTS.md](AGENTS.md)**；本节只讲仓库布局与构建边界。
+
 ```
 GeoAI/                # 仓库根目录即项目根
   package.json
-  vite.config.js      # Vite 构建配置（只构建自有代码）
-  index.html          # Vite 入口 HTML（CDN 引入 Monaco / Cesium）
-  server.js           # MCP stdio + WebSocket + HTTP 静态服务（三合一进程，不参与构建）
-  experience.js       # 经验库存储（Markdown 事实源 + index 缓存 + 检索/去重/自动捕获）
-  experience-cli.js   # 经验库校验/创建流水线（lint 硬校验 / new 脚手架 / from-note 笔记转化）
+  vite.config.js      # Vite 构建配置（MPA：一个试炼场一个入口）
+  playgrounds/        # 试炼场：沉淀经验的真实执行环境（一个目标地图库一个页面，详见 playgrounds/README.md）
+    cesium/           #   CesiumJS 试炼场（当前主线）
+      index.html        # 页面入口（CDN 引入 Monaco / Cesium，加载顺序敏感）
+      main.js           # Cesium Viewer / Monaco / WebSocket / 代码执行 / kit 装配
+      style.css
+  kits/               # 能力库层（注入式 TypeScript，详见第 5.1 节）
+    index.ts            # 装配入口：mountKits({ Cesium, viewer }) → kit 对象
+    registry.json       # 能力清单事实源（id / intents / apis / signature / snippet）
+    registry-schema.ts  # registry.json 的 TS 类型定义
+    cesium-api-types.ts # 唯一的 Cesium 类型接缝（全部 import type，编译期擦除）
+    cesium-kit-core/    # 契约层：createKit + 生命周期 + 断言
+    cesium-kit-camera/  # 相机：flyToRegion / lookAtPoint / unlock / snapshot
+    cesium-kit-imagery/ # 影像与地形：ArcGIS 免 key 底图/ 3D 地形 / 高程采样
+    cesium-kit-geojson/ # 行政边界：DataV 中国区划 GeoJSON 取数/加载/摘取下级
+  scripts/            # Node 侧程序（npm 发布运行时 + 工具，内部互相相对导入）
+    server.js           # MCP stdio + WebSocket + HTTP 静态服务（三合一进程，不参与构建）
+    experience.js       # 经验库存储（Markdown 事实源 + index 缓存 + 检索/去重/自动捕获）
+    experience-cli.js   # 经验库校验/创建流水线（lint 硬校验 / new 脚手架 / from-note 笔记转化）
+    lib-registry.js     # 能力清单的 Node 侧读取与检索（供 MCP 工具 list_libs / get_lib_doc 用）
+    skill-export.js     # 经验热集导出为 SKILL.md
+    expert-export.js    # 经验热集导出为 WorkBuddy 专家包（.codebuddy-plugin）
   experience/
     entries/          # 经验库事实源（每条一个 md，随仓库提交即分发；index.json 为 gitignore 缓存）
-  lib-registry.js     # 能力清单的 Node 侧读取与检索（供 MCP 工具 list_libs / get_lib_doc 用）
-  src/
-    main.js           # Cesium Viewer / Monaco / WebSocket / 代码执行 / kit 装配
-    style.css
-    lib/              # 能力库层（注入式 TypeScript，详见第 5.1 节）
-      index.ts            # 装配入口：mountKits({ Cesium, viewer }) → kit 对象
-      registry.json       # 能力清单事实源（id / intents / apis / signature / snippet）
-      registry-schema.ts  # registry.json 的 TS 类型定义
-      cesium-api-types.ts # 唯一的 Cesium 类型接缝（全部 import type，编译期擦除）
-      cesium-kit-core/    # 契约层：createKit + 生命周期 + 断言
-      cesium-kit-camera/  # 相机：flyToRegion / lookAtPoint / unlock / snapshot
-      cesium-kit-imagery/ # 影像与地形：ArcGIS 免 key 底图/ 3D 地形 / 高程采样
-      cesium-kit-geojson/ # 行政边界：DataV 中国区划 GeoJSON 取数/加载/摘取下级
-  tsconfig.json       # 库层类型检查配置（strict + noUncheckedIndexedAccess）
-  test-client.js      # 模拟 MCP 客户端的端到端自测脚本
-  test-libs.js        # 能力库层端到端自测（list_libs / get_lib_doc / send_snippet / kit.* 真飞）
-  dist/               # Vite 构建产物（gitignore；npm 发布时经 files 白名单随包分发）
+  tests/
+    test-client.js    # 模拟 MCP 客户端的端到端自测脚本
+    test-libs.js      # 能力库层端到端自测（list_libs / get_lib_doc / send_snippet / kit.* 真飞）
+  tsconfig.json       # 库层类型检查配置（strict + noUncheckedIndexedAccess，只覆盖 kits/）
+  dist/               # Vite 构建产物（gitignore；按源码目录布局 dist/playgrounds/cesium/…，npm 发布时经 files 白名单随包分发）
+  website/            # 项目官网（独立静态站，Vercel 部署，不参与 npm 包）
+  AGENTS.md           # 仓库工程约定（红线 / 目录速查 / 工作流，AI agent 与贡献者通用）
   README.md
 ```
 
+Node 侧程序收在 `scripts/`（即 npm 发布运行时，`files` 白名单），`kits/`、`playgrounds/`、`tests/` 各归其位。
+
 ### 构建边界（刻意保持最小）
 
-- **只有 `src/` 与 `index.html` 参与 Vite 构建**。
+- **只有 `playgrounds/`（试炼场页面）与 `kits/`（能力库）参与 Vite 构建**。
 - **Cesium 与 Monaco Editor 仍从 CDN 加载**，不进产物。原因：两者都依赖全局脚本
   加载顺序（见已知限制 #2），打包进来会破坏该顺序且引入 worker/资源路径问题。
   代价：离线环境不可用。
-- **`src/lib/` 参与构建**（它是自有代码），库层用 **TypeScript** 编写。
+- **`kits/` 参与构建**（它是自有代码），库层用 **TypeScript** 编写。
   - **Cesium 只作为类型来源**：装在 `devDependencies`，库内只用 `import type`（编译期完全擦除），
-    类型统一从 `src/lib/cesium-api-types.ts` 取。这保住了注入式契约的运行时独立性——
+    类型统一从 `kits/cesium-api-types.ts` 取。这保住了注入式契约的运行时独立性——
     页面侧仍用 CDN 的 `window.Cesium`，68MB 的 Cesium **不进产物**（实测 dist 14.5 kB）。
   - **禁止值导入**：库内不得出现 `import { ... } from 'cesium'`（会引入运行时依赖并导致双实例）。
   - 类型检查：`npm run typecheck`（strict + `noUncheckedIndexedAccess`）；
     `npm run build:check` = typecheck + build。
-- **`server.js` 不参与构建**，它跑在 Node 侧，负责托管 `dist/`。
-- **npm 发布内容**：`files` 白名单只带 `server.js` + `lib-registry.js` + `dist/` + `src/lib/registry.json` + README；
+- **`server.js` 不参与构建**，它跑在 Node 侧，负责托管 `dist/`（根路径 `/` 重定向到默认试炼场）。
+- **npm 发布内容**：`files` 白名单只带 `scripts/` + `kits/` + `dist/` + `experience/entries` + README；
   `prepare` 钩子在 `npm install` / `npm publish` 前自动完成构建。
+- 上述边界的完整纪律（禁止值导入、类型接缝、加载顺序、白名单同步）集中在 [AGENTS.md](AGENTS.md)，改动构建相关代码前先读它。
 
 ## 4. MCP 客户端配置
 
@@ -169,7 +181,7 @@ npx 方式（包发布后推荐）：
   "mcpServers": {
     "geoai": {
       "command": "node",
-      "args": ["/绝对路径/GeoAI/server.js"]
+      "args": ["/绝对路径/GeoAI/scripts/server.js"]
     }
   }
 }
@@ -202,7 +214,7 @@ npx 方式（包发布后推荐）：
 
 | 工具 | 参数 | 行为 |
 | --- | --- | --- |
-| `open_page` | 无 | 用默认浏览器打开 HTTP 服务地址（默认 http://127.0.0.1:3000），并等待页面 WebSocket 连入（超时 10s）；配置了 `GEOAI_WS_TOKEN` 时自动携带 token |
+| `open_page` | 无 | 用默认浏览器打开 HTTP 服务地址（默认 http://127.0.0.1:3000/playgrounds/cesium/），并等待页面 WebSocket 连入（超时 10s）；配置了 `GEOAI_WS_TOKEN` 时自动携带 token |
 | `list_libs` | `query?` | 列出能力库（kit）；带 query 时按场景/API 名过滤。**写代码前先查这里**——库已封装常见坑位，优先 `kit.*` 而非裸写 Cesium API |
 | `get_lib_doc` | `id` | 读取某个 kit 的用法、签名与可运行示例 |
 | `send_snippet` | `id`, `sessionId?` | 把某个 kit 的示例代码直接推送到编辑器（不执行），随后 `run_code` |
@@ -215,7 +227,7 @@ npx 方式（包发布后推荐）：
 
 **资源**：`geoai://status`（连接状态）、`geoai://experience/index`（经验库清单）、`geoai://libs/index`（能力库清单 + 外部包登记）。
 
-**多会话**：页面以 `?session=<id>` 打开即可多开（如 `http://127.0.0.1:3000/?session=dev`）；同一 id 后连入的页面会替换先连入的，未指定时均归属 `default` 会话。
+**多会话**：页面以 `?session=<id>` 打开即可多开（如 `http://127.0.0.1:3000/playgrounds/cesium/?session=dev`）；同一 id 后连入的页面会替换先连入的，未指定时均归属 `default` 会话。
 
 ### 经验库（经验注入中间件的核心）
 
@@ -229,8 +241,8 @@ geoai 不只是执行通道，更是经验沉淀层——这是它区别于普�
 - **校验与创建流水线**（组织模式对照 WorkBuddy expert-manager）：
   `npm run lint:exp` 硬校验条目与导出物——frontmatter 严格 `key: value` 格式（防「冒号后丢空格静默失效」）、
   id 与文件名一致、kind/status 白名单、缺 `## 什么时候用` 节、`[[相关条目]]` 与 registry 双向引用断链、导出物过期；
-  ERROR 退出码非零，WARN 仅提示。`node experience-cli.js new <slug> --title "..."` 生成 draft 脚手架（TODO 占位）；
-  `node experience-cli.js from-note <note.md> [--dry-run]` 把笔记 / WorkBuddy memory 片段启发式提取为 draft
+  ERROR 退出码非零，WARN 仅提示。`node scripts/experience-cli.js new <slug> --title "..."` 生成 draft 脚手架（TODO 占位）；
+  `node scripts/experience-cli.js from-note <note.md> [--dry-run]` 把笔记 / WorkBuddy memory 片段启发式提取为 draft
   （标题 / 报错行 / 修法章节 / js 代码块），补不齐的字段留 TODO，人工确认后入库。
 - **与库层互导（A 方案）**：经验检索命中后若该条已被库封装，返回里会附一行
   「⚡ 已封装为库: kit.xxx —— 优先用库」；反向 `list_libs` 也会带出该库对应的坑位标题。
@@ -239,7 +251,7 @@ geoai 不只是执行通道，更是经验沉淀层——这是它区别于普�
 
 ```bash
 npm run export-skill                    # 输出 ./geoai-cesium-experience/SKILL.md（按成功次数取 top 12）
-node skill-export.js --out <dir> --top 20
+node scripts/skill-export.js --out <dir> --top 20
 ```
 
   导出物是经验库的"热集视图"，**不是事实源**——skill 正文末尾会引导模型对长尾经验调用 `search_experience`；库更新后重新导出即可。事实源始终在经验库目录。
@@ -277,7 +289,7 @@ viewer.camera.flyTo({
 **注入式契约（关键设计）**：所有库都从**入参**拿 Cesium，代码里不 `import 'cesium'`。
 
 ```ts
-// src/lib/cesium-kit-camera/index.ts（节选）
+// kits/cesium-kit-camera/index.ts（节选）
 import type { Kit } from '../cesium-kit-core/index';
 
 export function createCameraKit(kit: Kit): CameraKit {
@@ -294,9 +306,9 @@ export function createCameraKit(kit: Kit): CameraKit {
 **TypeScript 与类型来源**：库层是 TS，但**不把 Cesium 作为运行时依赖**——
 `cesium` 装在 `devDependencies` 只提供类型（`@types/cesium` 停留在 1.70，与当前 1.121 差距过大，故用官方包自带的
 `Source/Cesium.d.ts`），库内一律 `import type`，编译期被完全擦除。
-所有类型引用收敛到 `src/lib/cesium-api-types.ts` 这一个接缝，便于未来拆包时统一切换类型来源。
+所有类型引用收敛到 `kits/cesium-api-types.ts` 这一个接缝，便于未来拆包时统一切换类型来源。
 
-**当前可用能力**（`list_libs` 可查，事实源 `src/lib/registry.json`）：
+**当前可用能力**（`list_libs` 可查，事实源 `kits/registry.json`）：
 
 | kit | 方法 | 封装的坑 |
 | --- | --- | --- |
@@ -318,15 +330,9 @@ const r = await kit.camera.flyToRegion(
 | 类型 | 例子 | 说明 |
 | --- | --- | --- |
 | npm 依赖 | `cesium-extends` | 内部 `import from 'cesium'`，只能用于 Cesium 走 npm 的项目。其 tooltip/popup/measure/drawer 能力计划以注入式重写进本仓库 kits |
-| script 引入 | 任意 CDN `<script>` 插件 | 全局变量 + 加载顺序敏感（见已知限制 #2）。只做登记，MCP 不能保证 `run_code` 可用，需先在 `index.html` 手动加 script |
+| script 引入 | 任意 CDN `<script>` 插件 | 全局变量 + 加载顺序敏感（见已知限制 #2）。只做登记，MCP 不能保证 `run_code` 可用，需先在试炼场的 `index.html` 手动加 script |
 
-**扩展一个新 kit**：
-
-1. 新建 `src/lib/cesium-kit-<name>/index.ts`，导出 `create<Name>Kit(kit: Kit): <Name>Kit`；
-   类型从 `../cesium-api-types` 取（**只用 `import type`**）；
-2. 在 `src/lib/index.ts` 的 `mountKits()` 里 `kit.use(create<Name>Kit)`；
-3. 在 `src/lib/registry.json` 加一条（含 `intents` 意图词、`apis`、`signature`、`snippet`）；
-4. `npm run typecheck` 通过后，`node test-libs.js` 验证。
+**扩展一个新 kit**：四步流程（新建 kit 目录 → `mountKits()` 装配 → `registry.json` 登记 → typecheck + 真飞验证）见 [AGENTS.md](AGENTS.md)「工作流」。
 
 ## 6. 底图与合规说明
 
@@ -334,7 +340,7 @@ const r = await kit.camera.flyToRegion(
 
 - **默认（无需 key）**：不加载影像瓦片，渲染纯色地球 + 经纬网 + 大气效果。
   桥接链路、Monaco 注入、代码执行、相机飞行全部可正常验证，不影响本项目目标。
-- **可选（合规影像）**：在 `src/main.js` 顶部把 `TIANDITU_TK` 的占位字符串替换为你自己的天地图 Key，即启用天地图影像底图。
+- **可选（合规影像）**：在 `playgrounds/cesium/main.js` 顶部把 `TIANDITU_TK` 的占位字符串替换为你自己的天地图 Key，即启用天地图影像底图。
   申请入口：天地图官网 http://lbs.tianditu.gov.cn/ → 控制台 → 创建新应用 → 服务接口 → 申请 Key。
 
 未配置时页面日志会明确提示「未配置天地图 key」，不会静默失败。
@@ -343,19 +349,20 @@ const r = await kit.camera.flyToRegion(
 
 1. **无沙箱**：页面用 `AsyncFunction("viewer","Cesium", code)` 包装执行 MCP 客户端下发的代码（支持顶层 await）。
    该代码拥有页面同源的全部权限（DOM、网络、存储）。**本项目仅限本地验证用途，生产必须替换为 iframe sandbox + postMessage，或 Web Worker + 独立 origin。**
-2. **Cesium.js 必须先于 monaco loader.js 加载**（顺序敏感，改动 `index.html` 时勿调换）：
+2. **Cesium.js 必须先于 monaco loader.js 加载**（顺序敏感，改动 `playgrounds/cesium/index.html` 时勿调换）：
    Cesium 打包产物内含 UMD 模块（如 `ipv6`），会检测全局 `define.amd`。
    若 Monaco AMD loader 先执行并注入 `define`，Cesium 会走 `define(t)` 分支，
    而 Monaco loader 拒绝匿名 define（`Can only have one anonymous define call per script file`），
    导致 Cesium 脚本抛错中断、`window.Cesium` 未定义、右侧地球全黑。
-   症状隐蔽（无控制台错误提示），`src/main.js` 已加显式检查并给出该提示。
+   症状隐蔽（无控制台错误提示），`playgrounds/cesium/main.js` 已加显式检查并给出该提示。
 3. **依赖 CDN，离线不可用**：Cesium / Monaco 走 jsDelivr（见第 3 节「构建边界」）。
    内网或离线环境需改为 npm 依赖 + `vite-plugin-static-copy` 复制 Cesium 资源，
    但必须重新验证上面第 2 条的加载顺序。
 4. **`dev:web` 与 `open_page` 端口不同**：Vite dev server 在 5173，而 MCP 工具
    `open_page` 打开的是 express 的 3000。开发时要么 `npm run build` 后用 3000，
-   要么手动访问 5173（此时 MCP 仍能连上：WS 地址优先从 express 的 `/config.json` 获取，
-   Vite 下没有该端点时回退默认 3001，因此要求 express 侧用默认端口在跑）。
+   要么手动访问 `http://127.0.0.1:5173/playgrounds/cesium/`（此时 MCP 仍能连上：
+   WS 地址优先从 express 的 `/config.json` 获取，Vite 下没有该端点时回退默认 3001，
+   因此要求 express 侧用默认端口在跑）。
 5. **未接 LLM**：不自动生成代码，代码由客户端 `send_code` 传入。
 6. **默认端口 3000/3001，可用环境变量覆盖**：`GEOAI_HTTP_PORT` / `GEOAI_WS_PORT`，
    仅绑定 127.0.0.1。端口被占用时 server 会打印明确错误并退出（`lsof -ti :3000 | xargs kill` 可清理）。
@@ -364,7 +371,7 @@ const r = await kit.camera.flyToRegion(
 8. **同会话单页面**：同一 `session` id 只保留最后连入的页面（后连替换先连）；需要并行多页面时用 `?session=<id>` 区分。
 9. **stdio 单通道**：`server.js` 的 stdout 属于 MCP 协议通道，所有日志强制走 `console.error`（stderr）。
    往 server.js 加日志时务必不要使用 `console.log`，否则会破坏 MCP 协议。
-10. **`open_page` 依赖 GUI**：无桌面环境 / 沙箱中 `open()` 会失败，此时需手动访问 http://127.0.0.1:3000。
+10. **`open_page` 依赖 GUI**：无桌面环境 / 沙箱中 `open()` 会失败，此时需手动访问 http://127.0.0.1:3000/playgrounds/cesium/。
 11. **后台标签页不推进动画**：浏览器把页面切到后台时 `requestAnimationFrame` 暂停，
     `camera.flyTo` 动画会停住（代码已下发并执行，只是画面不推进）。保持页面前台即可。
 
@@ -376,7 +383,7 @@ npm test
 
 脚本会依次执行 `open_page` → 等待 3s → `get_status` → `send_code`（飞向上海东方明珠）→ `run_code` → `get_status`，并打印每次返回。
 
-浏览器未自动打开时：手动访问 http://127.0.0.1:3000 后重跑 `npm test`，肉眼确认：
+浏览器未自动打开时：手动访问 http://127.0.0.1:3000/playgrounds/cesium/ 后重跑 `npm test`，肉眼确认：
 1. 左侧 Monaco 显示 test-client 推送的代码
 2. 右侧 Cesium 相机飞向上海东方明珠（121.4998, 31.2397）
 3. 页面底部显示「执行成功」
@@ -394,10 +401,10 @@ npm publish        # prepare 钩子先自动重新构建；files 白名单保证
 > 采用 open-core 双许可：AGPL 已足够绝大多数场景；不满足 AGPL §13（网络交互须公开源码）
 > 的业务可向维护者购买商业授权，在不开放自有专有代码的前提下使用。
 >
-> **范围覆盖整个仓库**，包括 `src/lib/` 能力库层与 `experience/` 经验库——
+> **范围覆盖整个仓库**，包括 `kits/` 能力库层与 `experience/` 经验库——
 > 库与 MCP 服务同为 AGPL，不做 license 分层。
 >
-> ⚠️ **拆包提示**：若将来把 `src/lib/` 拆成独立 npm 包发布到公共 registry，
+> ⚠️ **拆包提示**：若将来把 `kits/` 拆成独立 npm 包发布到公共 registry，
 > 消费方（含Orillusion Geo 等私有项目）将受 AGPL 约束。
 > 私有项目可选择：① 保持 monorepo 内部依赖不单独发包；
 > ② 商业授权；③ 仅参考源码自行重写（注意 AGPL 不允许仅"借鉴"绕过许可）。
@@ -409,6 +416,7 @@ npm publish        # prepare 钩子先自动重新构建；files 白名单保证
 | 方向 | 说明 |
 | --- | --- |
 | 经验领域扩展 | 从 CesiumJS 三维可视化主线扩展到更广的 GIS 开发经验：坐标系统与投影、矢量瓦片、OGC 服务、空间分析、数据格式转换……目标是「GIS 开发的大多数常见经验，接入即得」 |
+| 多试炼场 | 试炼场模式（playgrounds/）复制到 Mapbox GL JS / Leaflet / deck.gl 等其他地图库，每个库一个真实执行环境，共享同一份经验库与经验飞轮（新增步骤见 playgrounds/README.md） |
 | 扩充能力库 | 实体与图层管理、地形剖面、时间轴、量测绘制（cesium-extends 的 tooltip/popup/measure/drawer 以注入式重写进 kits） |
 | iframe 沙箱 | 把用户代码放进 `sandbox` iframe，`allow-scripts` + `postMessage` 返回结果/错误，替换 `new Function` |
 | 语义检索 | 经验检索从关键词打分升级为向量/语义检索（条目过千后再做） |

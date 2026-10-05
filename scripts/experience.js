@@ -26,7 +26,7 @@ export const KINDS = new Set(['pitfall', 'snippet', 'pattern']);
 export const STATUSES = new Set(['draft', 'verified', 'broken']);
 
 export function storeDir() {
-  return process.env.GEOAI_EXPERIENCE_DIR || path.join(__dirname, 'experience');
+  return process.env.GEOAI_EXPERIENCE_DIR || path.join(__dirname, '..', 'experience');
 }
 
 function entriesDir() {

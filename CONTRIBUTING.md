@@ -49,8 +49,7 @@ source: run_code          # run_code | manual | model
 
 ## 代码规范
 
-- 新写的自有源文件必须带 SPDX 头（见现有文件）。
-- 日志纪律：`server.js` 的 stdout 属于 MCP 协议通道，只走 `console.error`，禁止 `console.log`。
+- **工程红线与修改指南统一见 [AGENTS.md](./AGENTS.md)**（日志纪律、构建边界、`kits/` 导入约束、导出物规则、自测要求）——对人类贡献者与 AI agent 同样生效。
 - 提交信息建议遵循 Conventional Commits（如 `feat:`, `fix:`, `docs:`）。
 
 ## 第三方代码

@@ -6,4 +6,5 @@ dist/
 geoai-cesium-experience/
 geoai-cesium-expert/
 experience/index.json
-.codebuddy
+.codebuddy/
+.zcode/

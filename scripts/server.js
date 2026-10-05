@@ -47,8 +47,10 @@ import {
 import { listKits, getKit, searchKits, listExternal, kitsForExperience, experiencesForKit } from './lib-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/** 项目根（scripts/ 的上一级）：dist / package.json 都相对它解析 */
+const ROOT_DIR = path.resolve(__dirname, '..');
 const require = createRequire(import.meta.url);
-const { name: PKG_NAME, version: PKG_VERSION } = require('./package.json');
+const { name: PKG_NAME, version: PKG_VERSION } = require(path.join(ROOT_DIR, 'package.json'));
 
 const HTTP_HOST = '127.0.0.1';
 const WS_HOST = '127.0.0.1';
@@ -56,7 +58,10 @@ const HTTP_PORT = Number.parseInt(process.env.GEOAI_HTTP_PORT ?? '', 10) || 3000
 const WS_PORT = Number.parseInt(process.env.GEOAI_WS_PORT ?? '', 10) || 3001;
 const WS_TOKEN = process.env.GEOAI_WS_TOKEN || '';
 const RUN_TIMEOUT_MS = Number.parseInt(process.env.GEOAI_RUN_TIMEOUT_MS ?? '', 10) || 30_000;
-const PAGE_URL = `http://${HTTP_HOST}:${HTTP_PORT}/`;
+/** 默认试炼场（playgrounds/ 下的目录名）：open_page 与根路径 / 的重定向目标 */
+const DEFAULT_PLAYGROUND = 'cesium';
+const PLAYGROUND_PATH = `/playgrounds/${DEFAULT_PLAYGROUND}/`;
+const PAGE_URL = `http://${HTTP_HOST}:${HTTP_PORT}${PLAYGROUND_PATH}`;
 const OPEN_TIMEOUT_MS = 10_000;
 
 /** log 唯一出口, 严禁 console.log */
@@ -67,8 +72,9 @@ function log(...args) {
 // ---------------------------------------------------------------- HTTP 静态服务
 // 托管 Vite 构建产物 dist/。开发时请跑 `npm run dev:web`（Vite dev server 独立端口），
 // 或先 `npm run build` 再 `npm start`（npm install 的 prepare 钩子通常会自动完成构建）。
-const DIST_DIR = path.join(__dirname, 'dist');
-const HAS_DIST = fs.existsSync(path.join(DIST_DIR, 'index.html'));
+const DIST_DIR = path.join(ROOT_DIR, 'dist');
+const DIST_INDEX = path.join(DIST_DIR, 'playgrounds', DEFAULT_PLAYGROUND, 'index.html');
+const HAS_DIST = fs.existsSync(DIST_INDEX);
 
 const app = express();
 // 页面侧 WS 地址下发: 端口可被环境变量改变, 页面不能写死 3001
@@ -76,6 +82,8 @@ app.get('/config.json', (_req, res) => {
   res.type('application/json').send(JSON.stringify({ wsUrl: `ws://${WS_HOST}:${WS_PORT}` }));
 });
 if (HAS_DIST) {
+  // 根路径重定向到默认试炼场（产物按源码目录布局：dist/playgrounds/cesium/…）
+  app.get('/', (_req, res) => res.redirect(PLAYGROUND_PATH));
   app.use(express.static(DIST_DIR));
 } else {
   app.get('/', (_req, res) => {
@@ -83,10 +91,10 @@ if (HAS_DIST) {
       .status(503)
       .type('text/plain; charset=utf-8')
       .send(
-        'dist/index.html 不存在，页面尚未构建。\n\n' +
+        `${path.relative(ROOT_DIR, DIST_INDEX)} 不存在，页面尚未构建。\n\n` +
           '请任选其一：\n' +
           '  1) 构建后启动：  npm run build && npm start\n' +
-          '  2) 前端 dev：     npm run dev:web （Vite dev server http://127.0.0.1:5173）\n\n' +
+          `  2) 前端 dev：     npm run dev:web （Vite dev server ${PAGE_URL.replace(String(HTTP_PORT), '5173')}）\n\n` +
           `注意：MCP 工具 open_page 打开的是本 express 服务（${HTTP_PORT} 端口）。\n`,
       );
   });
@@ -95,7 +103,7 @@ if (HAS_DIST) {
 const httpServer = app.listen(HTTP_PORT, HTTP_HOST, () => {
   log(`HTTP 静态服务已启动: ${PAGE_URL}`);
   if (!HAS_DIST) {
-    log(`警告: 未找到 dist/index.html，页面将返回 503。构建命令: npm run build`);
+    log(`警告: 未找到 ${path.relative(ROOT_DIR, DIST_INDEX)}，页面将返回 503。构建命令: npm run build`);
   }
 });
 
@@ -516,7 +524,7 @@ mcp.registerTool(
 );
 
 // ---------------------------------------------------------------- 能力库工具
-// 库层（src/lib/）把 Cesium 踩过的坑固化成可调用能力，避免模型每次重写。
+// 库层（kits/）把 Cesium 踩过的坑固化成可调用能力，避免模型每次重写。
 // 检索时与经验库互补：list_libs 回答「该调什么」，search_experience 回答「会踩什么坑」。
 mcp.registerTool(
   'list_libs',
@@ -539,7 +547,7 @@ mcp.registerTool(
             type: 'text',
             text: query
               ? `未命中「${query}」对应的能力库。现有: ${all || '(空)'}。可换个关键词, 或直接用 Cesium 原生 API。`
-              : '能力库为空（src/lib/registry.json 未配置或读取失败）。',
+              : '能力库为空（kits/registry.json 未配置或读取失败）。',
           },
         ],
       };

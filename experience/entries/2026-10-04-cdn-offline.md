@@ -15,7 +15,7 @@ source: manual
 页面右侧全空、控制台报 Cesium/monaco 未定义, 且机器不能访问公网时
 
 ## 现象 / 报错
-src/main.js 显式检查: 「CesiumJS 未加载成功。请检查网络能否访问 cdn.jsdelivr.net」
+playgrounds/cesium/main.js 显式检查: 「CesiumJS 未加载成功。请检查网络能否访问 cdn.jsdelivr.net」
 
 ## 修法（已验证代码）
 ```js

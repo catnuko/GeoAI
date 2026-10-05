@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 catnuko <https://github.com/catnuko>
 /**
- * test-libs.js —— 库层（src/lib/）端到端验证
+ * test-libs.js —— 库层（kits/）端到端验证
  *
  * 覆盖链路: MCP Client --stdio--> server.js --WS--> 页面 --AsyncFunction--> kit.* --> Cesium
  * 验证目标:
@@ -11,7 +11,7 @@
  *   4. lookAt -> unlock 链路正确（先锁后解锁，相机恢复自由）
  *
  * 用法: node test-libs.js
- * 浏览器打不开时手动访问 http://127.0.0.1:3000 后重跑。
+ * 浏览器打不开时手动访问 http://127.0.0.1:3000/playgrounds/cesium/ 后重跑。
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -70,7 +70,7 @@ function parseRunJson(text) {
 async function main() {
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [path.join(__dirname, 'server.js')],
+    args: [path.join(__dirname, '..', 'scripts', 'server.js')],
     stderr: 'inherit',
   });
 
@@ -125,7 +125,7 @@ async function main() {
   // ---------- 4. 打开页面 ----------
   out('\n【4】打开页面');
   const opened = await call(client, 'open_page', {});
-  if (opened.isError) out('  浏览器未自动打开，请手动访问 http://127.0.0.1:3000');
+  if (opened.isError) out('  浏览器未自动打开，请手动访问 http://127.0.0.1:3000/playgrounds/cesium/');
   out('  等待 4 秒让页面完成 Cesium + kit 装配…');
   await sleep(4000);
 

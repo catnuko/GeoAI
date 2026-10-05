@@ -20,7 +20,7 @@ source: manual
 ## 修法（已验证代码）
 ```js
 // 这是合规默认: 境外 OSM 直连瓦片不符合国内地图合规要求, 项目默认不加载影像。
-// 要真实影像: 到 lbs.tianditu.gov.cn 申请 key, 在 src/main.js 顶部替换 TIANDITU_TK 后重新构建。
+// 要真实影像: 到 lbs.tianditu.gov.cn 申请 key, 在 playgrounds/cesium/main.js 顶部替换 TIANDITU_TK 后重新构建。
 // 桥接/相机/实体等一切功能不受影响 —— 不要把它当 bug 修。
 return 'solid globe is by design (no tianditu key)';
 ```
