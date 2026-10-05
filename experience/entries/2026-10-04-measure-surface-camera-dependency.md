@@ -2,6 +2,7 @@
 id: 2026-10-04-measure-surface-camera-dependency
 title: 贴地量算依赖当前相机：换视角结果会变，点在视口外直接 NaN 而不报错
 kind: pitfall
+lib: cesium
 tags: [measure, 贴地, surface, 相机依赖, NaN, 视口外, worldToWindowCoordinates]
 apis: [SceneTransforms.worldToWindowCoordinates, camera.getPickRay, globe.pick, EllipsoidGeodesic]
 errors: [面积显示 NaN, 换相机后数值变了, 同样的点两次结果不一样, 缩放后距离跳变]

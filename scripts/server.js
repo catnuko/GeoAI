@@ -13,8 +13,11 @@
  *   GEOAI_HTTP_PORT / GEOAI_WS_PORT   端口覆盖（页面经 /config.json 自动获取 WS 地址）
  *   GEOAI_WS_TOKEN                    可选。设置后页面必须带 ?token=xxx 才能连入 WS
  *   GEOAI_RUN_TIMEOUT_MS              run_code 等待页面执行回执的超时（默认 30000）
+ *   GEOAI_MAPBOX_TOKEN / GEOAI_AMAP_KEY / GEOAI_AMAP_SECURITY
+ *                                     可选。经 /config.json 下发给对应试炼场页面初始化地图（不配则页面提示自行 createMap）
  *
- * 会话: 页面以 ?session=<id> 连入（默认 default），同 id 后连者替换先连者；
+ * 会话: 页面以 ?session=<id>&playground=<name> 连入（session 默认 default；playground 记录页面归属
+ *       试炼场，用于 save/capture 时推断经验归属域 lib）。同 id 后连者替换先连者；
  *       send_code / run_code 可用 sessionId 定向，不填则发给最近连入的页面。
  *       run_code 为请求-响应模式：页面执行后带 id 回传 result/error，工具把返回值或报错
  *       直接交还 MCP 客户端，模型据此自我修正。
@@ -58,11 +61,41 @@ const HTTP_PORT = Number.parseInt(process.env.GEOAI_HTTP_PORT ?? '', 10) || 3000
 const WS_PORT = Number.parseInt(process.env.GEOAI_WS_PORT ?? '', 10) || 3001;
 const WS_TOKEN = process.env.GEOAI_WS_TOKEN || '';
 const RUN_TIMEOUT_MS = Number.parseInt(process.env.GEOAI_RUN_TIMEOUT_MS ?? '', 10) || 30_000;
-/** 默认试炼场（playgrounds/ 下的目录名）：open_page 与根路径 / 的重定向目标 */
+/** 默认试炼场（playgrounds/ 下的目录名）：open_page 不带参数与根路径 / 重定向的目标 */
 const DEFAULT_PLAYGROUND = 'cesium';
 const PLAYGROUND_PATH = `/playgrounds/${DEFAULT_PLAYGROUND}/`;
 const PAGE_URL = `http://${HTTP_HOST}:${HTTP_PORT}${PLAYGROUND_PATH}`;
 const OPEN_TIMEOUT_MS = 10_000;
+
+/** 试炼场页面地址（playgrounds/ 目录名 -> 完整 URL） */
+function pageUrlOf(name) {
+  return `http://${HTTP_HOST}:${HTTP_PORT}/playgrounds/${name}/`;
+}
+
+/** 可用试炼场 = dist（构建产物）与源码 playgrounds/ 下含 index.html 的目录并集 */
+function availablePlaygrounds() {
+  const names = new Set();
+  for (const base of [path.join(DIST_DIR, 'playgrounds'), path.join(ROOT_DIR, 'playgrounds')]) {
+    try {
+      for (const d of fs.readdirSync(base)) {
+        if (fs.existsSync(path.join(base, d, 'index.html'))) names.add(d);
+      }
+    } catch {}
+  }
+  return [...names].sort();
+}
+
+/** 各试炼场的执行上下文说明（open_page 返回给模型，随页面不同） */
+const PLAYGROUND_CONTEXT = {
+  cesium: '左侧为 Monaco 编辑器, 右侧为 Cesium 地球。执行上下文变量: viewer / Cesium / kit（能力库层）。',
+  leaflet: '左侧为 Monaco 编辑器, 右侧为 Leaflet 2D 地图。执行上下文变量: map / L。',
+  mapbox:
+    '左侧为 Monaco 编辑器, 右侧为 Mapbox GL JS 地图。执行上下文变量: map / mapboxgl。' +
+    '未配置 GEOAI_MAPBOX_TOKEN 时 map 为 null, 可在代码里用 createMap(token) 创建并赋给 map。',
+  amap:
+    '左侧为 Monaco 编辑器, 右侧为高德 JSAPI 地图。执行上下文变量: map / AMap。' +
+    '未配置 GEOAI_AMAP_KEY 时 map 为 null, 可在代码里用 createMap(key, securityJsCode) 创建并赋给 map。',
+};
 
 /** log 唯一出口, 严禁 console.log */
 function log(...args) {
@@ -77,9 +110,20 @@ const DIST_INDEX = path.join(DIST_DIR, 'playgrounds', DEFAULT_PLAYGROUND, 'index
 const HAS_DIST = fs.existsSync(DIST_INDEX);
 
 const app = express();
-// 页面侧 WS 地址下发: 端口可被环境变量改变, 页面不能写死 3001
+// 页面侧下发: WS 地址（端口可被环境变量改变, 页面不能写死 3001）、可用试炼场清单、
+// 可选地图服务 key（来自环境变量, 只落在本地回环页面；未配置时页面退化为无底图并提示）
 app.get('/config.json', (_req, res) => {
-  res.type('application/json').send(JSON.stringify({ wsUrl: `ws://${WS_HOST}:${WS_PORT}` }));
+  res.type('application/json').send(
+    JSON.stringify({
+      wsUrl: `ws://${WS_HOST}:${WS_PORT}`,
+      playgrounds: availablePlaygrounds(),
+      keys: {
+        mapbox: process.env.GEOAI_MAPBOX_TOKEN || '',
+        amap: process.env.GEOAI_AMAP_KEY || '',
+        amapSecurity: process.env.GEOAI_AMAP_SECURITY || '',
+      },
+    }),
+  );
 });
 if (HAS_DIST) {
   // 根路径重定向到默认试炼场（产物按源码目录布局：dist/playgrounds/cesium/…）
@@ -126,6 +170,15 @@ const pendingRuns = new Map();
 let runSeq = 0;
 /** @type {Map<string, string>} sessionId -> 最近一次 send_code 的代码（失败自动捕获时回溯用） */
 const lastCodeBySession = new Map();
+/** @type {Map<string, string>} sessionId -> 页面所属试炼场（save/capture 推断经验归属域 lib 用） */
+const sessionPlayground = new Map();
+/** 试炼场 -> 经验归属域（experience.js 的 lib 字段）；geo/data 域无对应页面, 只能显式指定 */
+const PLAYGROUND_LIB = { cesium: 'cesium', leaflet: 'leaflet', mapbox: 'mapbox', amap: 'amap' };
+/** 会话对应经验归属域：显式 sessionId > 最近连入会话；未知试炼场回落 cesium */
+function libOfSession(sessionId) {
+  const pg = sessionPlayground.get(sessionId || lastSessionId || 'default');
+  return PLAYGROUND_LIB[pg] ?? DEFAULT_PLAYGROUND;
+}
 
 /** @type {Set<{sessionId: string, resolve: () => void, reject: (e: Error) => void, timer: NodeJS.Timeout}>} */
 const pageWaiters = new Set();
@@ -140,13 +193,13 @@ function wakePageWaiters() {
   }
 }
 
-/** 等待指定会话的页面连入（已连接则立即返回）, 超时抛错 */
-function waitForPage(sessionId = 'default', timeoutMs = OPEN_TIMEOUT_MS) {
+/** 等待指定会话的页面连入（已连接则立即返回）, 超时抛错；urlHint 用于超时提示手动打开的地址 */
+function waitForPage(sessionId = 'default', timeoutMs = OPEN_TIMEOUT_MS, urlHint = PAGE_URL) {
   if (pageSockets.get(sessionId)) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pageWaiters.delete(waiter);
-      reject(new Error(`等待页面 WebSocket 连接超时 (${timeoutMs / 1000}s)。请手动打开 ${PAGE_URL}`));
+      reject(new Error(`等待页面 WebSocket 连接超时 (${timeoutMs / 1000}s)。请手动打开 ${urlHint}`));
     }, timeoutMs);
     const waiter = { sessionId, resolve, reject, timer };
     pageWaiters.add(waiter);
@@ -190,7 +243,8 @@ wss.on('connection', (ws, req) => {
     return;
   }
   const sessionId = url.searchParams.get('session') || 'default';
-  log(`页面已连接 WebSocket: session=${sessionId} (from ${req.socket.remoteAddress})`);
+  const playground = url.searchParams.get('playground') || DEFAULT_PLAYGROUND;
+  log(`页面已连接 WebSocket: session=${sessionId} playground=${playground} (from ${req.socket.remoteAddress})`);
 
   const prev = pageSockets.get(sessionId);
   if (prev && prev !== ws) {
@@ -199,6 +253,7 @@ wss.on('connection', (ws, req) => {
     } catch {}
   }
   pageSockets.set(sessionId, ws);
+  sessionPlayground.set(sessionId, playground);
   lastSessionId = sessionId;
   wakePageWaiters();
 
@@ -227,6 +282,7 @@ wss.on('connection', (ws, req) => {
     log(`页面已断开 WebSocket: session=${sessionId}`);
     if (pageSockets.get(sessionId) === ws) {
       pageSockets.delete(sessionId);
+      sessionPlayground.delete(sessionId);
       if (lastSessionId === sessionId) {
         lastSessionId = pageSockets.keys().next().value ?? null;
       }
@@ -251,13 +307,14 @@ const mcp = new McpServer(
   {
     capabilities: { tools: {}, resources: {} },
     instructions:
-      '通过 WebSocket 把 JavaScript 推送到内嵌 Cesium 地球的页面并执行。' +
-      '代码以 AsyncFunction("viewer","Cesium","kit", code) 包装执行（支持顶层 await，可直接 await provider 的 fromUrl），' +
-      '可直接访问 viewer、Cesium 全局对象，以及 kit（能力库层）。' +
-      '工作流: 写代码前先 list_libs 看有没有现成能力（库已封装常见坑位，优先 kit.* 而非裸写 Cesium API），' +
-      '再 search_experience 检索坑位与已验证代码（可用场景词 / API 名 / 报错关键词）；' +
+      '通过 WebSocket 把代码推送到试炼场页面并执行，在真实地图（Cesium / Leaflet / Mapbox / 高德）上验证。' +
+      'open_page 可选 playground 打开不同试炼场（默认 cesium），执行上下文变量随试炼场不同（cesium: viewer/Cesium/kit；leaflet: map/L；mapbox: map/mapboxgl；amap: map/AMap）。' +
+      '代码以 AsyncFunction 包装执行（支持顶层 await）。' +
+      '工作流: 写代码前先 list_libs 看有没有现成能力（优先 kit.* 而非裸写库 API），' +
+      '再 search_experience 检索坑位与已验证代码（覆盖 cesium / leaflet / mapbox / amap / geo 跨库通识 / data 数据处理与 CLI 工具各域，可用 lib 参数聚焦）；' +
       '然后 send_code 下发代码, run_code 执行 —— run_code 返回执行返回值或报错；' +
-      '失败时按报错修改重试, 成功且有复用价值时用 save_experience 固化经验。',
+      '失败时按报错修改重试, 成功且有复用价值时用 save_experience 固化经验（geo/data 域经验请显式传 lib）。' +
+      '数据处理（ogr2ogr / tippecanoe / 3d-tiles-tools 等 CLI 工具）不经页面执行：直接在宿主 shell 跑命令，search_experience 的 lib=data 检索经验与校验清单。',
   },
 );
 
@@ -265,11 +322,29 @@ mcp.registerTool(
   'open_page',
   {
     title: '打开验证页面',
-    description: `用默认浏览器打开 ${PAGE_URL} （session=default），并等待页面 WebSocket 连接成功（超时 10 秒）。配置了 GEOAI_WS_TOKEN 时自动携带 token。`,
-    inputSchema: {},
+    description:
+      `用默认浏览器打开试炼场页面（默认 ${DEFAULT_PLAYGROUND}，可用 playground=leaflet / mapbox / amap 切换），` +
+      '并等待页面 WebSocket 连接成功（超时 10 秒）。配置了 GEOAI_WS_TOKEN 时自动携带 token。' +
+      '指定 playground 时会话默认用 playground 名（避免顶掉已打开页面的连接），可用 sessionId 覆盖。',
+    inputSchema: {
+      playground: z.string().optional().describe('试炼场（playgrounds/ 目录名）：cesium（默认）/ leaflet / mapbox / amap，决定页面与执行上下文变量'),
+      sessionId: z.string().optional().describe('页面会话 id；不填时 default（显式指定 playground 且未指定会话时用 playground 名）'),
+    },
   },
-  async () => {
-    const openUrl = WS_TOKEN ? `${PAGE_URL}?token=${encodeURIComponent(WS_TOKEN)}` : PAGE_URL;
+  async ({ playground, sessionId } = {}) => {
+    const pg = String(playground ?? DEFAULT_PLAYGROUND).trim();
+    const known = availablePlaygrounds();
+    if (!known.includes(pg)) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `未知试炼场 "${pg}"。可用: ${known.join(' / ') || '(未构建任何页面)'}（playgrounds/ 下目录名）` }],
+      };
+    }
+    const sid = String(sessionId ?? '').trim() || (playground ? pg : 'default');
+    const base = pageUrlOf(pg);
+    const params = new URLSearchParams({ session: sid });
+    if (WS_TOKEN) params.set('token', WS_TOKEN);
+    const openUrl = `${base}?${params.toString()}`;
     let openedBy = 'open()';
     try {
       await open(openUrl);
@@ -279,7 +354,7 @@ mcp.registerTool(
       log(openedBy);
     }
     try {
-      await waitForPage('default', OPEN_TIMEOUT_MS);
+      await waitForPage(sid, OPEN_TIMEOUT_MS, base);
     } catch (err) {
       return {
         isError: true,
@@ -291,10 +366,7 @@ mcp.registerTool(
       content: [
         {
           type: 'text',
-          text:
-            `页面已打开并连接成功: ${PAGE_URL} (session=default)\n` +
-            `打开方式: ${openedBy}\n` +
-            '左侧为 Monaco 编辑器, 右侧为 Cesium 地球。现在可以调用 send_code / run_code。',
+          text: `页面已打开并连接成功: ${base} (session=${sid}, playground=${pg})\n打开方式: ${openedBy}\n${PLAYGROUND_CONTEXT[pg] ?? ''}`,
         },
       ],
     };
@@ -373,10 +445,10 @@ mcp.registerTool(
           ],
         };
       }
-      // 失败自动捕获为经验草稿（坑位），供后续检索与固化修法
+      // 失败自动捕获为经验草稿（坑位），供后续检索与固化修法；归属域按页面所属试炼场推断
       let captureNote = '';
       try {
-        const captured = captureFailure(lastCodeBySession.get(target.sessionId) ?? '', desc);
+        const captured = captureFailure(lastCodeBySession.get(target.sessionId) ?? '', desc, libOfSession(target.sessionId));
         if (captured) {
           captureNote = `\n（已自动捕获本次失败为经验草稿 ${captured.id}，修复后可调用 save_experience 固化修法）`;
         }
@@ -406,8 +478,9 @@ mcp.registerTool(
           type: 'text',
           text: JSON.stringify({
             pageConnected: sessions.length > 0,
-            sessions,
+            sessions: sessions.map((s) => ({ id: s, playground: sessionPlayground.get(s) ?? DEFAULT_PLAYGROUND })),
             lastSession: lastSessionId,
+            playgrounds: availablePlaygrounds(),
             http: PAGE_URL,
             websocket: `ws://${WS_HOST}:${WS_PORT}`,
           }),
@@ -423,17 +496,19 @@ mcp.registerTool(
   {
     title: '检索经验库',
     description:
-      '在经验库中检索写 Cesium 代码的已验证经验（坑位修法 / 代码范例 / 用法要点）。' +
-      '检索词可用: 场景意图（如"加载3DTiles""相机对准实体"）、API 名、或报错关键词（失败时按报错搜修法）。',
+      '在经验库中检索写地图/GIS 代码的已验证经验（坑位修法 / 代码范例 / 用法要点），' +
+      '覆盖 cesium / leaflet / mapbox / amap / geo（跨库通识: 坐标系、瓦片方案、投影）/ data（数据处理与 CLI 工具: GDAL、tippecanoe、3d-tiles-tools）各域。' +
+      '检索词可用: 场景意图（如"加载3DTiles""相机对准实体""shapefile转geojson"）、API 名或 CLI 工具名、或报错关键词（失败时按报错搜修法）。',
     inputSchema: {
       query: z.string().min(1).describe('检索词'),
       limit: z.number().int().min(1).max(8).optional().describe('返回条数, 默认 3, 最多 8'),
+      lib: z.string().optional().describe('归属域聚焦: cesium / leaflet / mapbox / amap / geo / data。命中里优先返回本域经验（不硬过滤, 跨域命中仍返回）'),
     },
   },
-  async ({ query, limit }) => {
+  async ({ query, limit, lib }) => {
     let hits;
     try {
-      hits = searchExperience(query, limit ?? 3);
+      hits = searchExperience(query, limit ?? 3, { lib });
     } catch (err) {
       return { isError: true, content: [{ type: 'text', text: `经验库读取失败: ${err.message}` }] };
     }
@@ -449,13 +524,13 @@ mcp.registerTool(
     const lines = hits.map((h, i) => {
       const m = h.entry;
       const codeLines = m.code ? `\n   代码: ${m.code.split('\n').slice(0, 6).join('\n   ')}` : '';
-      // A 方案·互导：若该条经验已被能力库封装，明确告诉模型优先用库，别再裸写 Cesium API
+      // A 方案·互导：若该条经验已被能力库封装，明确告诉模型优先用库，别再裸写地图库 API
       const kits = kitsForExperience(m.id).filter((k) => k.status === 'ready');
       const kitHint = kits.length
         ? `\n   ⚡ 已封装为库: kit.${kits.map((k) => k.id).join(' / kit.')} —— 优先用库（已内置本条修法），` +
           `get_lib_doc("${kits[0].id}")`
         : '';
-      return `${i + 1}. [${m.kind}/${m.status}] ${m.title} (id=${m.id}, 成功${m.successCount}次)\n   什么时候用: ${m.trigger || '(见全文)'}${codeLines}${kitHint}\n   完整内容: get_experience("${m.id}")`;
+      return `${i + 1}. [${m.lib}/${m.kind}/${m.status}] ${m.title} (id=${m.id}, 成功${m.successCount}次)\n   什么时候用: ${m.trigger || '(见全文)'}${codeLines}${kitHint}\n   完整内容: get_experience("${m.id}")`;
     });
     return { content: [{ type: 'text', text: `命中 ${hits.length} 条经验:\n${lines.join('\n')}` }] };
   },
@@ -495,18 +570,24 @@ mcp.registerTool(
     inputSchema: {
       kind: z.enum(['pitfall', 'snippet', 'pattern']).describe('pitfall=坑位+修法, snippet=可复用代码, pattern=用法要点'),
       title: z.string().min(1).describe('一句话标题, 具体到场景（如"3DTiles 大场景相机初始定位"）'),
-      code: z.string().optional().describe('已验证的代码'),
+      code: z.string().optional().describe('已验证的代码（js 代码或 shell 命令）'),
       problem: z.string().optional().describe('pitfall: 现象或报错原文'),
       fix: z.string().optional().describe('pitfall: 修法说明'),
       trigger: z.string().optional().describe('什么时候用本条（一行触发条件, 不填自动生成）'),
       tags: z.array(z.string()).optional().describe('意图关键词（中英文均可, 不要含逗号）'),
-      apis: z.array(z.string()).optional().describe('涉及的 Cesium API 名'),
+      apis: z.array(z.string()).optional().describe('涉及的 API 名（地图库 API 或 ogr2ogr / tippecanoe 等 CLI 工具与子命令）'),
       errors: z.array(z.string()).optional().describe('典型报错签名（便于按报错检索）'),
+      lib: z.string().optional().describe('归属域: cesium / leaflet / mapbox / amap / geo / data。不填按当前执行页面的试炼场推断；geo（跨库通识）与 data（数据处理/CLI）域经验必须显式指定'),
+      lang: z.enum(['js', 'bash']).optional().describe('代码语言: shell 命令用 bash, 默认 js'),
     },
   },
   async (input) => {
     try {
-      const saved = saveExperience(input, { source: 'model' });
+      // lib 缺省按最近会话的试炼场推断（geo/data 无对应页面, 靠显式传参）
+      const saved = saveExperience(
+        { ...input, lib: input.lib ?? libOfSession(), lang: input.lang ?? 'js' },
+        { source: 'model' },
+      );
       return {
         content: [
           {
@@ -531,22 +612,24 @@ mcp.registerTool(
   {
     title: '列出能力库',
     description:
-      '列出已挂载到页面的 Cesium 能力库（kit）。写代码前先看这里：库已封装常见坑位，' +
-      '优先用 kit.* 而不是裸写 Cesium API。带 query 时按意图/场景/API 名过滤（如"相机""flyTo""底图""地形"）。',
+      '列出能力库（kit）。写代码前先看这里：库已封装常见坑位，优先用 kit.* 而不是裸写库 API。' +
+      '带 query 时按意图/场景/API 名过滤（如"相机""flyTo""底图""地形"）；带 lib 时只看指定归属域的库（目前能力库集中在 cesium 域）。',
     inputSchema: {
       query: z.string().optional().describe('可选检索词：场景意图 / API 名'),
+      lib: z.string().optional().describe('可选归属域过滤: cesium / leaflet / mapbox / amap'),
     },
   },
-  async ({ query }) => {
-    const kits = query ? searchKits(query, 8).map((h) => h.kit) : listKits();
+  async ({ query, lib }) => {
+    let kits = query ? searchKits(query, 8).map((h) => h.kit) : listKits();
+    if (lib) kits = kits.filter((k) => (k.lib ?? 'cesium') === lib);
     if (!kits.length) {
       const all = listKits().map((k) => `${k.id}(${k.title})`).join('；');
       return {
         content: [
           {
             type: 'text',
-            text: query
-              ? `未命中「${query}」对应的能力库。现有: ${all || '(空)'}。可换个关键词, 或直接用 Cesium 原生 API。`
+            text: query || lib
+              ? `未命中对应的能力库。现有: ${all || '(空)'}。可换个关键词, 或直接用地图库原生 API。`
               : '能力库为空（kits/registry.json 未配置或读取失败）。',
           },
         ],
@@ -557,7 +640,7 @@ mcp.registerTool(
       // A 方案·互导：库带出关联坑位，让模型一次就知道「有哪些能力 + 什么时候用/有什么坑」
       const exps = experiencesForKit(k.id, listIndex).map((e) => e.title);
       const exp = exps.length ? `\n   适用场景/坑位: ${exps.join('；')}` : '';
-      return `- [${status}] ${k.id} · ${k.title}\n   能力: ${k.summary}\n   调用: ${k.signature}${exp}`;
+      return `- [${status}][${k.lib ?? 'cesium'}] ${k.id} · ${k.title}\n   能力: ${k.summary}\n   调用: ${k.signature}${exp}`;
     });
     const ext = listExternal();
     const extNote = ext.length
@@ -565,7 +648,7 @@ mcp.registerTool(
       : '';
     return {
       content: [
-        { type: 'text', text: `能力库 ${kits.length} 项:\n${lines.join('\n')}\n\n执行上下文可用变量: viewer, Cesium, kit${extNote}` },
+        { type: 'text', text: `能力库 ${kits.length} 项:\n${lines.join('\n')}\n\n执行上下文可用变量: viewer, Cesium, kit（cesium 试炼场; 其他试炼场见 open_page 返回）${extNote}` },
       ],
     };
   },
@@ -650,7 +733,7 @@ mcp.registerTool(
 mcp.registerResource(
   'libs',
   'geoai://libs/index',
-  { title: '能力库清单', description: '已挂载的 Cesium 能力库与外部包登记（JSON）' },
+  { title: '能力库清单', description: '已挂载的能力库（含归属域 lib）与外部包登记（JSON）' },
   async () => ({
     contents: [
       {

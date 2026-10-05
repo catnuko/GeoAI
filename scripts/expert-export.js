@@ -100,11 +100,11 @@ function repoVersion() {
   }
 }
 
-function buildPluginJson({ entryCount, version, zhName, enName }) {
+function buildPluginJson({ entryCount, verifiedCount, version, zhName, enName }) {
   return {
     name: PKG_NAME,
     version,
-    description: `GIS CesiumJS 3D map development expert backed by ${entryCount} verified pitfall fixes from real page runs`,
+    description: `GIS CesiumJS 3D map development expert backed by ${verifiedCount} verified pitfall fixes (of ${entryCount} entries) from real page runs`,
     author: { name: 'catnuko' },
     license: 'AGPL-3.0-only',
     agents: [`./agents/${AGENT_NAME}.md`],
@@ -114,9 +114,9 @@ function buildPluginJson({ entryCount, version, zhName, enName }) {
     displayName: { en: enName, zh: zhName },
     profession: { en: 'GIS Cesium Development Expert', zh: 'GIS Cesium 开发专家' },
     displayDescription: {
-      en: `CesiumJS 3D map expert: camera control, imagery basemaps, terrain, drawing, measuring and popups, backed by ${entryCount} verified pitfall fixes.`,
+      en: `CesiumJS 3D map expert: camera control, imagery basemaps, terrain, drawing, measuring and popups, backed by ${verifiedCount} verified pitfall fixes.`,
       // 硬规则: 中文 40-50 字（validate_expert 校验）, 条目数变化时长度仍落在区间
-      zh: `精通CesiumJS三维开发：相机控制、影像底图、地形、绘制量算与弹窗标注，内置${entryCount}条已验证经验。`,
+      zh: `精通CesiumJS三维开发：相机控制、影像底图、地形、绘制量算与弹窗标注，内置${verifiedCount}条已验证经验。`,
     },
     avatar: 'avatars/expert.png',
     categoryId: '02-Engineering',
@@ -132,7 +132,7 @@ function buildPluginJson({ entryCount, version, zhName, enName }) {
 }
 
 /** 人格提示词（agents md）。正文按 agent-md-spec 固定结构; 知识细节留给预加载的内置 skill */
-function buildAgentMd({ zhName, enName, entryCount }) {
+function buildAgentMd({ zhName, enName, entryCount, verifiedCount }) {
   return `---
 name: ${AGENT_NAME}
 description: GIS CesiumJS 3D map development expert with a verified experience library; activates for Cesium scene coding, camera / imagery / terrain tasks, drawing, measuring and map debugging.
@@ -148,7 +148,7 @@ skills: [${SKILL_DIR}]
 
 # GIS Cesium 三维地图 - ${zhName}
 
-你是资深 GIS 三维地图开发专家, 擅长 CesiumJS 场景开发: 相机控制、影像底图与 3D 地形接入、矢量绘制、量算、弹窗标注, 以及踩坑排查。你的知识来自 geoai 经验库（${entryCount} 条, 全部经真实 Cesium 页面执行验证）, 预加载的经验热集 skill 里有可直接复用的已验证代码。
+你是资深 GIS 三维地图开发专家, 擅长 CesiumJS 场景开发: 相机控制、影像底图与 3D 地形接入、矢量绘制、量算、弹窗标注, 以及踩坑排查。你的知识来自 geoai 经验库（共 ${entryCount} 条, 其中 ${verifiedCount} 条 verified 经真实页面/环境执行验证, 其余为待实证草稿, 引用前先看 status）, 预加载的经验热集 skill 里有可直接复用的已验证代码。
 
 ## 核心能力
 1. **相机控制**：flyTo / flyToRegion / lookAt 跟随与解锁, 自动处理相机锁定与动画结束等待
@@ -195,20 +195,24 @@ function writePkg(outDir, { version, zhName, enName }) {
     process.exit(1);
   }
   const top = [...index]
-    .sort((a, b) => (b.successCount || 0) - (a.successCount || 0) || (b.created || '').localeCompare(a.created || ''))
+    // verified 优先: draft 批量入库时不能以"更新"挤掉已验证经验（热集宣称全是已验证代码）
+    .sort((a, b) => (b.status === 'verified') - (a.status === 'verified')
+      || (b.successCount || 0) - (a.successCount || 0) || (b.created || '').localeCompare(a.created || ''))
     .slice(0, TOP_N);
   const entryCount = index.length;
+  // 热集宣称"已验证"必须只数 verified; 专家包文案同步区分, 避免把 draft/待实证条目也算成已验证
+  const verifiedCount = index.filter((e) => e.status === 'verified').length;
   const kitCount = listKits().filter((k) => k.status === 'ready').length;
 
   const skillMd = renderSkill(top);
-  const pluginJson = buildPluginJson({ entryCount, version, zhName, enName });
+  const pluginJson = buildPluginJson({ entryCount, verifiedCount, version, zhName, enName });
 
   fs.rmSync(outDir, { recursive: true, force: true });
   for (const d of ['.codebuddy-plugin', 'agents', `skills/${SKILL_DIR}`, 'avatars']) {
     fs.mkdirSync(path.join(outDir, d), { recursive: true });
   }
   fs.writeFileSync(path.join(outDir, '.codebuddy-plugin', 'plugin.json'), JSON.stringify(pluginJson, null, 2) + '\n', 'utf8');
-  fs.writeFileSync(path.join(outDir, 'agents', `${AGENT_NAME}.md`), buildAgentMd({ zhName, enName, entryCount }), 'utf8');
+  fs.writeFileSync(path.join(outDir, 'agents', `${AGENT_NAME}.md`), buildAgentMd({ zhName, enName, entryCount, verifiedCount }), 'utf8');
   fs.writeFileSync(path.join(outDir, 'skills', SKILL_DIR, 'SKILL.md'), skillMd, 'utf8');
   fs.writeFileSync(path.join(outDir, 'avatars', 'expert.png'), solidPng(512, AVATAR_COLOR));
   fs.writeFileSync(path.join(outDir, 'README.md'), buildPkgReadme({ date: new Date().toISOString().slice(0, 10), entryCount, kitCount }), 'utf8');

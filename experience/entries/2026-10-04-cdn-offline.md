@@ -2,6 +2,7 @@
 id: 2026-10-04-cdn-offline
 title: 离线/内网环境页面起不来——Cesium 与 Monaco 走 jsDelivr CDN
 kind: pitfall
+lib: cesium
 tags: [CDN, 离线, 内网, jsDelivr, 白屏]
 apis: []
 errors: [CesiumJS 未加载成功, Cesium is not defined, monaco 未加载]

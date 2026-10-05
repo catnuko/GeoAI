@@ -2,6 +2,7 @@
 id: 2026-10-04-lookat-unlock
 title: lookAt 之后相机被锁定, 后续 flyTo/setView 失效; 用 lookAtTransform 解锁
 kind: pitfall
+lib: cesium
 tags: [camera, lookAt, 相机, flyTo, 解锁]
 apis: [camera.lookAt, camera.lookAtTransform, HeadingPitchRange]
 errors: [flyTo 无效, 相机不动]

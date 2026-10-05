@@ -2,6 +2,7 @@
 id: 2026-10-04-drawer-state-machine
 title: 绘图交互状态机与 once/dynamicStyle 的真实语义（原库文档与实现矛盾）
 kind: pattern
+lib: cesium
 tags: [drawer, 绘图, 状态机, once, dynamicStyle, 交互, draw]
 apis: [ScreenSpaceEventHandler, CallbackProperty, entities.add, PolygonHierarchy]
 errors: [画完一个就停了, 预览样式不生效, 重复 start 泄漏]

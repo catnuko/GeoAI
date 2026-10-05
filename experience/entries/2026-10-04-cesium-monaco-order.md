@@ -2,6 +2,7 @@
 id: 2026-10-04-cesium-monaco-order
 title: 自建页面集成时 Cesium.js 必须先于 Monaco loader.js 加载
 kind: pitfall
+lib: cesium
 tags: [Cesium, Monaco, 加载顺序, define.amd, 集成]
 apis: []
 errors: [Can only have one anonymous define call per script file, window.Cesium 未定义]

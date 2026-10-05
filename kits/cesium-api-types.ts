@@ -27,6 +27,10 @@ import type {
   ArcGisMapServerImageryProvider,
   UrlTemplateImageryProvider,
   ArcGISTiledElevationTerrainProvider,
+  WebMapTileServiceImageryProvider,
+  WebMapServiceImageryProvider,
+  TilingScheme,
+  Cartographic,
   Color,
   Entity,
   GeoJsonDataSource,
@@ -35,6 +39,21 @@ import type {
   BoundingSphere,
   Occluder,
   EllipsoidGeodesic,
+  Matrix4,
+  Cesium3DTileset,
+  CustomShader,
+  BillboardCollection,
+  PointPrimitiveCollection,
+  SampledPositionProperty,
+  VelocityOrientationProperty,
+  JulianDate,
+  TimeInterval,
+  TimeIntervalCollection,
+  Property,
+  PostProcessStage,
+  ClippingPlane,
+  ClippingPlaneCollection,
+  CallbackProperty,
 } from 'cesium';
 
 /**
@@ -63,6 +82,10 @@ export type {
   ArcGisMapServerImageryProvider,
   UrlTemplateImageryProvider,
   ArcGISTiledElevationTerrainProvider,
+  WebMapTileServiceImageryProvider,
+  WebMapServiceImageryProvider,
+  TilingScheme,
+  Cartographic,
   Color,
   Entity,
   GeoJsonDataSource,
@@ -71,6 +94,21 @@ export type {
   BoundingSphere,
   Occluder,
   EllipsoidGeodesic,
+  Matrix4,
+  Cesium3DTileset,
+  CustomShader,
+  BillboardCollection,
+  PointPrimitiveCollection,
+  SampledPositionProperty,
+  VelocityOrientationProperty,
+  JulianDate,
+  TimeInterval,
+  TimeIntervalCollection,
+  Property,
+  PostProcessStage,
+  ClippingPlane,
+  ClippingPlaneCollection,
+  CallbackProperty,
 };
 
 /**
@@ -103,7 +141,12 @@ export interface CesiumLike {
   readonly UrlTemplateImageryProvider: new (opts: {
     url: string;
     subdomains?: string[];
+    minimumLevel?: number;
     maximumLevel?: number;
+    tilingScheme?: TilingScheme;
+    rectangle?: unknown;
+    /** 自定义占位符（4490 层号偏移等）。签名 (provider, x, y, level) => string */
+    customTags?: Record<string, (provider: unknown, x: number, y: number, level: number) => string>;
   }) => UrlTemplateImageryProvider;
   readonly ArcGisMapServerImageryProvider: {
     fromUrl(url: string): Promise<ArcGisMapServerImageryProvider>;
@@ -111,10 +154,39 @@ export interface CesiumLike {
   readonly ArcGISTiledElevationTerrainProvider: {
     fromUrl(url: string): Promise<ArcGISTiledElevationTerrainProvider>;
   };
+  /** WMTS 服务（天地图 / 各级 4490 切片的标准通道）。构造期即校验参数，缺 layer/format 直接抛错 */
+  readonly WebMapTileServiceImageryProvider: new (opts: {
+    url: string;
+    layer: string;
+    style?: string;
+    format: string;
+    tileMatrixSetID: string;
+    /** 层号表。天地图 _c 从 1 起（(z+1)），_w 从 0 起（z）——错一个全盘 404/错位 */
+    tileMatrixLabels?: string[];
+    subdomains?: string[];
+    tilingScheme?: TilingScheme;
+    minimumLevel?: number;
+    maximumLevel?: number;
+  }) => WebMapTileServiceImageryProvider;
+  /** WMS 服务。parameters 缺 transparent+png 会整幅不透明盖住底图（见 domestic-imagery-traps 条目） */
+  readonly WebMapServiceImageryProvider: new (opts: {
+    url: string;
+    layers: string;
+    parameters?: Record<string, string>;
+  }) => WebMapServiceImageryProvider;
+  readonly GeographicTilingScheme: new (opts?: {
+    numberOfLevelZeroTilesX?: number;
+    numberOfLevelZeroTilesY?: number;
+  }) => TilingScheme;
+  readonly WebMercatorTilingScheme: new (opts?: Record<string, unknown>) => TilingScheme;
+  /** 度 → 弧度 Cartographic。sampleTerrain* 系列只认弧度（传度数结果错得离谱） */
+  readonly Cartographic: {
+    fromDegrees(lon: number, lat: number, height?: number): Cartographic;
+  };
   sampleTerrainMostDetailed(
     terrainProvider: TerrainProvider,
-    points: unknown[],
-  ): Promise<{ height: number }[]>;
+    points: Cartographic[],
+  ): Promise<Cartographic[]>;
   /** geojson 库需要：Color 常量取默认样式（withAlpha 等实例方法走完整 Color 类型） */
   readonly Color: {
     readonly CYAN: Color;
@@ -257,4 +329,126 @@ export interface ImageryAddResult {
   ok: true;
   layerIndex: number;
   url: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * 域扩展接口（沿用 CesiumInteractiveLike 的先例）：
+ * 每类能力库只为自己需要的 Cesium 值面建窄接口，
+ * 让「库实际依赖了哪些 Cesium 能力」在类型层面一目了然。
+ * 注入方永远是同一个真实 window.Cesium，运行时全量满足。
+ * ------------------------------------------------------------------ */
+
+/** tiles 库（3D Tiles 加载/抬升/染色）需要的 Cesium 值面 */
+export interface CesiumTilesLike extends CesiumLike {
+  readonly Cartesian3: CesiumLike['Cartesian3'] & {
+    new (x?: number, y?: number, z?: number): Cartesian3;
+    fromRadians(lon: number, lat: number, height?: number, ellipsoid?: unknown, result?: Cartesian3): Cartesian3;
+    subtract(left: Cartesian3, right: Cartesian3, result: Cartesian3): Cartesian3;
+  };
+  readonly Cartographic: CesiumLike['Cartographic'] & {
+    fromCartesian(cartesian: Cartesian3, ellipsoid?: unknown, result?: Cartographic): Cartographic;
+  };
+  readonly Matrix4: CesiumLike['Matrix4'] & {
+    new (): Matrix4;
+    fromTranslation(translation: Cartesian3, result?: Matrix4): Matrix4;
+    multiply(left: Matrix4, right: Matrix4, result: Matrix4): Matrix4;
+  };
+  readonly Cesium3DTileset: {
+    fromUrl(url: string, opts?: Record<string, unknown>): Promise<Cesium3DTileset>;
+  };
+  readonly CustomShader: new (opts?: {
+    uniforms?: Record<string, unknown>;
+    lightingModel?: unknown;
+    fragmentShaderText?: string;
+    vertexShaderText?: string;
+  }) => CustomShader;
+  readonly LightingModel: { readonly UNLIT: unknown; readonly PBR: unknown };
+}
+
+/** points 库（海量点位 Collection）需要的 Cesium 值面 */
+export interface CesiumPointsLike extends CesiumLike {
+  readonly BillboardCollection: new (opts?: { scene?: unknown }) => BillboardCollection;
+  readonly PointPrimitiveCollection: new (opts?: { scene?: unknown }) => PointPrimitiveCollection;
+  readonly LabelCollection: new (opts?: { scene?: unknown }) => LabelCollection;
+  readonly NearFarScalar: new (near: number, nearValue: number, far: number, farValue: number) => NearFarScalar;
+  readonly HeightReference: {
+    readonly NONE: number;
+    readonly CLAMP_TO_GROUND: number;
+    readonly RELATIVE_TO_GROUND: number;
+  };
+  readonly Color: CesiumLike['Color'] & {
+    fromCssColorString(css: string): Color | undefined;
+    readonly RED: Color;
+    readonly WHITE: Color;
+  };
+}
+
+/** track 库（时间轴轨迹动画）需要的 Cesium 值面 */
+export interface CesiumTimeLike extends CesiumLike {
+  readonly JulianDate: {
+    new (): JulianDate;
+    fromDate(date: Date): JulianDate;
+    addHours(date: JulianDate, hours: number, result: JulianDate): JulianDate;
+    addSeconds(date: JulianDate, seconds: number, result: JulianDate): JulianDate;
+    secondsDifference(left: JulianDate, right: JulianDate): number;
+  };
+  readonly ClockRange: {
+    readonly LOOP_STOP: number;
+    readonly CLAMPED: number;
+    readonly UNBOUNDED: number;
+  };
+  readonly TimeInterval: new (opts: { start: JulianDate; stop: JulianDate }) => TimeInterval;
+  readonly TimeIntervalCollection: new (intervals?: TimeInterval[]) => TimeIntervalCollection;
+  readonly SampledPositionProperty: new (interpolationDegree?: number) => SampledPositionProperty;
+  readonly VelocityOrientationProperty: new (position: Property) => VelocityOrientationProperty;
+  readonly Color: CesiumLike['Color'] & {
+    readonly CYAN: Color;
+  };
+}
+
+/** effects 库（雨雪雾等全屏后处理）需要的值面。PPS shader 必须按 WebGL2 书写（texture/out_FragColor） */
+export interface CesiumEffectsLike extends CesiumLike {
+  readonly PostProcessStage: new (opts: {
+    fragmentShader: string;
+    uniforms?: Record<string, unknown>;
+  }) => PostProcessStage;
+  readonly Color: CesiumLike['Color'] & {
+    fromCssColorString(css: string): Color | undefined;
+    readonly WHITE: Color;
+  };
+}
+
+/** analysis 库（地形开挖/淹没）需要的值面 */
+export interface CesiumAnalysisLike extends CesiumLike {
+  readonly Cartesian3: CesiumLike['Cartesian3'] & {
+    new (x?: number, y?: number, z?: number): Cartesian3;
+    fromRadians(lon: number, lat: number, height?: number, ellipsoid?: unknown, result?: Cartesian3): Cartesian3;
+    subtract(left: Cartesian3, right: Cartesian3, result: Cartesian3): Cartesian3;
+    add(left: Cartesian3, right: Cartesian3, result: Cartesian3): Cartesian3;
+    multiplyByScalar(left: Cartesian3, scalar: number, result: Cartesian3): Cartesian3;
+    cross(left: Cartesian3, right: Cartesian3, result: Cartesian3): Cartesian3;
+    normalize(left: Cartesian3, result: Cartesian3): Cartesian3;
+    dot(left: Cartesian3, right: Cartesian3): number;
+  };
+  readonly Cartographic: CesiumLike['Cartographic'] & {
+    fromCartesian(cartesian: Cartesian3, ellipsoid?: unknown, result?: Cartographic): Cartographic;
+  };
+  readonly Ellipsoid: {
+    readonly WGS84: {
+      geodeticSurfaceNormal(cartesian: Cartesian3, result?: Cartesian3): Cartesian3;
+    };
+  };
+  readonly ClippingPlane: new (normal: Cartesian3, distance: number) => ClippingPlane;
+  readonly ClippingPlaneCollection: new (opts?: {
+    planes?: ClippingPlane[];
+    enabled?: boolean;
+    edgeColor?: Color;
+    edgeWidth?: number;
+  }) => ClippingPlaneCollection;
+  readonly CallbackProperty: new (callback: (time: unknown) => unknown, isConstant?: boolean) => CallbackProperty;
+  readonly Color: CesiumLike['Color'] & {
+    new (red?: number, green?: number, blue?: number, alpha?: number): Color;
+    fromCssColorString(css: string): Color | undefined;
+    readonly RED: Color;
+  };
 }

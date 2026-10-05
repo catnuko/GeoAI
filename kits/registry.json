@@ -20,10 +20,20 @@
         "camera",
         "fly to region"
       ],
-      "apis": ["camera.flyTo", "camera.lookAt", "camera.lookAtTransform", "camera.moveEnd"],
+      "apis": [
+        "camera.flyTo",
+        "camera.lookAt",
+        "camera.lookAtTransform",
+        "camera.moveEnd"
+      ],
       "signature": "kit.camera.flyToRegion({west,south,east,north}, {duration}) -> Promise<{center,height}>",
       "snippet": "// 飞到某个经纬度范围并等动画结束（自动解除 lookAt 锁定）\nconst r = await kit.camera.flyToRegion(\n  { west: 116.2, south: 39.7, east: 116.7, north: 40.1 },\n  { duration: 2 },\n);\nreturn r;",
-      "experience": ["2026-10-04-lookat-unlock", "2026-10-04-flyto-moveend", "2026-10-04-background-raf"]
+      "experience": [
+        "2026-10-04-lookat-unlock",
+        "2026-10-04-flyto-moveend",
+        "2026-10-04-background-raf"
+      ],
+      "lib": "cesium"
     },
     {
       "id": "imagery",
@@ -31,28 +41,42 @@
       "source": "local",
       "status": "ready",
       "title": "影像与地形",
-      "summary": "免 key 的 ArcGIS 影像底图与 3D 地形高程、天地图影像、地形高程采样。",
+      "summary": "免 key 的 ArcGIS 影像底图与 3D 地形高程、天地图 WMTS（c/w 层号自适应）、4490 切片、WMS、地形高程批量采样。",
       "intents": [
         "底图",
         "影像",
         "地形",
         "高程",
+        "采样",
         "elevations",
         "影像底图",
         "ArcGIS",
         "天地图",
+        "4490",
+        "CGCS2000",
+        "WMS",
+        "geoserver",
+        "wmts",
         "imagery",
         "terrain"
       ],
       "apis": [
         "ArcGisMapServerImageryProvider.fromUrl",
         "ArcGISTiledElevationTerrainProvider.fromUrl",
+        "WebMapTileServiceImageryProvider",
+        "WebMapServiceImageryProvider",
+        "UrlTemplateImageryProvider.customTags",
         "imageryLayers.addImageryProvider",
         "sampleTerrainMostDetailed"
       ],
-      "signature": "await kit.imagery.addArcGisImagery() / await kit.imagery.enableTerrain3D()",
-      "snippet": "// 免 key 影像底图 + 3D 地形（均为 ArcGIS 在线公开服务）\nawait kit.imagery.addArcGisImagery();\nawait kit.imagery.enableTerrain3D();\nreturn kit.camera.flyToRegion({ west: 116.2, south: 39.7, east: 116.7, north: 40.1 });",
-      "experience": ["2026-10-04-arcgis-world-imagery-terrain3d"]
+      "signature": "await kit.imagery.addArcGisImagery() / await kit.imagery.addTianditu(tk, {layer, projection}) / kit.imagery.add4490(url) / await kit.imagery.sampleProfile(p1, p2) / await kit.imagery.sampleHeights([{lon,lat}])",
+      "snippet": "// 免 key 影像底图 + 3D 地形（ArcGIS 公开服务），再批量采样高程（弧度由库内转换）\nawait kit.imagery.addArcGisImagery();\nawait kit.imagery.enableTerrain3D();\nconst h = await kit.imagery.sampleHeights([{ lon: 86.925, lat: 27.988 }]);   // 珠峰\nawait kit.camera.flyToRegion({ west: 116.2, south: 39.7, east: 116.7, north: 40.1 });\nreturn { everest: h.heights[0] };",
+      "experience": [
+        "2026-10-04-arcgis-world-imagery-terrain3d",
+        "2026-10-05-domestic-imagery-traps",
+        "2026-10-05-terrain-height-timing"
+      ],
+      "lib": "cesium"
     },
     {
       "id": "geojson",
@@ -88,7 +112,10 @@
       ],
       "signature": "await kit.geojson.loadAdmin(420100) -> { ok, url, featureCount, geojson, dataSource } / await kit.geojson.fetchAdmin(adcode, { full })",
       "snippet": "// 加载武汉市边界（贴地）并飞过去；想连下级区县一起加载传 { full: true }\nconst r = await kit.geojson.loadAdmin(420100, { flyTo: true });\nreturn { name: r.properties?.name, features: r.featureCount, url: r.url };",
-      "experience": ["2026-10-05-datav-china-geojson"]
+      "experience": [
+        "2026-10-05-datav-china-geojson"
+      ],
+      "lib": "cesium"
     },
     {
       "id": "drawer",
@@ -124,7 +151,12 @@
       ],
       "signature": "kit.drawer.start({ type: 'POLYGON', pick: 'terrain', style: {...} }) -> { ok, type, status }; 回调 onEnd(result) 拿到纯 JSON 的 points",
       "snippet": "// 贴地画一个多边形（左键加点 / 右键撤销 / 双击结束），结束回调给出经纬度序列\nconst out = await new Promise((resolve) => {\n  kit.drawer.start({\n    type: 'POLYGON',\n    pick: 'terrain',\n    style: { color: '#00CED1', outlineColor: '#FFD700' },\n    dynamicStyle: { color: '#00CED1', alpha: 0.15 },\n    onEnd: resolve,\n  });\n});\nreturn { count: out.count, points: out.points };",
-      "experience": ["2026-10-04-drawer-state-machine", "2026-10-04-drawer-pick-terrain", "2026-10-04-drawer-cancel-clears-all"]
+      "experience": [
+        "2026-10-04-drawer-state-machine",
+        "2026-10-04-drawer-pick-terrain",
+        "2026-10-04-drawer-cancel-clears-all"
+      ],
+      "lib": "cesium"
     },
     {
       "id": "measure",
@@ -158,7 +190,11 @@
       ],
       "signature": "kit.measure.distance(from, to, mode?: 'surface'|'plane', opts?) / kit.measure.polylineDistance(points, ...) / kit.measure.area(points, ...)",
       "snippet": "// 两点贴地距离（surface 沿地表，plane 走椭球面测地线）\nconst d = kit.measure.distance(\n  { lon: 116.39, lat: 39.90 },\n  { lon: 116.42, lat: 39.95 },\n);\n\n// 多边形贴地面积（至少 3 点，自动闭合）\nconst a = kit.measure.area([\n  { lon: 116.39, lat: 39.90 },\n  { lon: 116.42, lat: 39.90 },\n  { lon: 116.42, lat: 39.93 },\n  { lon: 116.39, lat: 39.93 },\n]);\nreturn { distance: d, area: a };",
-      "experience": ["2026-10-04-measure-plane-vs-surface", "2026-10-04-measure-surface-camera-dependency"]
+      "experience": [
+        "2026-10-04-measure-plane-vs-surface",
+        "2026-10-04-measure-surface-camera-dependency"
+      ],
+      "lib": "cesium"
     },
     {
       "id": "overlay",
@@ -180,10 +216,20 @@
         "infowindow",
         "hover"
       ],
-      "apis": ["SceneTransforms.worldToWindowCoordinates", "Occluder", "BoundingSphere", "Ellipsoid.WGS84", "scene.postRender.addEventListener", "ScreenSpaceEventHandler"],
+      "apis": [
+        "SceneTransforms.worldToWindowCoordinates",
+        "Occluder",
+        "BoundingSphere",
+        "Ellipsoid.WGS84",
+        "scene.postRender.addEventListener",
+        "ScreenSpaceEventHandler"
+      ],
       "signature": "kit.overlay.popup({ lon, lat, content }) / kit.overlay.popupAtScreen({ screen: {x,y} }) / kit.overlay.tooltip({ content }) -> handle{ setText, moveTo, show, hide, close }",
       "snippet": "const p = kit.overlay.popup({\n  lon: 116.39, lat: 39.90,\n  content: '<b>标题</b><br/>说明文字',\n});\n\n// 跟随鼠标的坐标提示\nconst tip = kit.overlay.tooltip();\n\nreturn { popupId: p.id, tooltipId: tip.id };",
-      "experience": ["2026-10-04-overlay-custom-container-crash"]
+      "experience": [
+        "2026-10-04-overlay-custom-container-crash"
+      ],
+      "lib": "cesium"
     },
     {
       "id": "terrain",
@@ -192,11 +238,206 @@
       "status": "planned",
       "title": "地形分析",
       "summary": "地形剖面、通视分析、等值线。规划中，尚未实现。",
-      "intents": ["地形剖面", "剖面", "通视", "等值线", "terrain profile", "line of sight"],
-      "apis": ["sampleTerrain", "clampToHeight"],
+      "intents": [
+        "地形剖面",
+        "剖面",
+        "通视",
+        "等值线",
+        "terrain profile",
+        "line of sight"
+      ],
+      "apis": [
+        "sampleTerrain",
+        "clampToHeight"
+      ],
       "signature": "(规划中)",
       "snippet": "",
-      "experience": []
+      "experience": [],
+      "lib": "cesium"
+    },
+    {
+      "id": "tiles",
+      "package": "@geoai/cesium-kit-tiles",
+      "source": "local",
+      "status": "ready",
+      "title": "3D Tiles",
+      "summary": "加载 tileset（异步工厂+失败归因）、ENU 正确整体抬升、CustomShader 染色与清除。封装 fromUrl 死路 / ECEF 抬升斜飞 / 着色器静默失效三类坑。",
+      "intents": [
+        "3D Tiles",
+        "3DTiles",
+        "tileset",
+        "倾斜摄影",
+        "三维模型",
+        "白模",
+        "抬升",
+        "压平",
+        "染色",
+        "分层设色",
+        "单体化",
+        "shader"
+      ],
+      "apis": [
+        "Cesium3DTileset.fromUrl",
+        "Cesium3DTileset.modelMatrix",
+        "CustomShader",
+        "LightingModel.UNLIT"
+      ],
+      "signature": "await kit.tiles.load(url, {zoom}) / kit.tiles.lift(tileset, meters) / kit.tiles.setShader(tileset, {fragmentShaderText}) / kit.tiles.clearShader(tileset)",
+      "snippet": "// 加载 3D Tiles（换成你的 tileset.json）+ ENU 正确抬升 80m + 按模型高度染色\nconst { tileset } = await kit.tiles.load('https://your-host/tileset.json', { zoom: true });\nkit.tiles.lift(tileset, 80);\nkit.tiles.setShader(tileset, {\n  fragmentShaderText: `void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {\n    float h = fsInput.attributes.positionMC.y;\n    material.diffuse = mix(vec3(0.2, 0.6, 1.0), vec3(1.0, 0.4, 0.0), clamp(h / 120.0, 0.0, 1.0));\n  }`,\n});\nreturn 'ok —— 清除用 kit.tiles.clearShader(tileset)';",
+      "experience": [
+        "2026-10-05-async-factory-migration",
+        "2026-10-05-3dtiles-modelmatrix-enu",
+        "2026-10-05-custom-shader",
+        "2026-10-05-3dtiles-monolith"
+      ],
+      "lib": "cesium"
+    },
+    {
+      "id": "points",
+      "package": "@geoai/cesium-kit-points",
+      "source": "local",
+      "status": "ready",
+      "title": "海量点位",
+      "summary": "万级点位/标注批量渲染：自动选 Billboard / PointPrimitive / Label Collection 单次 batch，贴地配防遮挡双保险，支持按相机远近缩放。",
+      "intents": [
+        "海量点",
+        "大量点",
+        "点位",
+        "撒点",
+        "散点",
+        "性能",
+        "几万个点",
+        "billboard",
+        "点聚合底料",
+        "标注",
+        "贴地标注"
+      ],
+      "apis": [
+        "BillboardCollection",
+        "PointPrimitiveCollection",
+        "NearFarScalar",
+        "disableDepthTestDistance"
+      ],
+      "signature": "kit.points.addMany([{lon,lat,color?|image?|text?}], {scaleByDistance, clampToGround}) -> {count} / kit.points.clear()",
+      "snippet": "// 一万条随机点（Collection 单次 batch，远处自动缩小）——Entity 逐个加会崩帧率\nconst items = Array.from({ length: 10000 }, () => ({\n  lon: 73 + Math.random() * 62, lat: 18 + Math.random() * 30,\n  color: '#38f', pixelSize: 6,\n}));\nconst r = kit.points.addMany(items, { scaleByDistance: [2.0e6, 1.0, 8.0e6, 0.1] });\nreturn { ...r, hint: 'kit.points.clear() 一键清空' };",
+      "experience": [
+        "2026-10-05-mass-points-collections",
+        "2026-10-05-clamp-to-ground-scope",
+        "2026-10-05-frame-listener-leak"
+      ],
+      "lib": "cesium"
+    },
+    {
+      "id": "motion",
+      "package": "@geoai/cesium-kit-motion",
+      "source": "local",
+      "status": "ready",
+      "title": "轨迹动画",
+      "summary": "时钟驱动的路径/漫游动画：animatePath（轨迹）+ orbitAround（绕点巡检）+ limitPitch（限俯仰）。shouldAnimate / UTC+8 / availability 三坑内置，句柄 stop 摘监听恢复时钟。",
+      "intents": [
+        "轨迹",
+        "路径动画",
+        "沿线运动",
+        "卫星",
+        "巡检",
+        "绕点飞行",
+        "环绕",
+        "限制视角",
+        "限俯仰",
+        "CZML 不动",
+        "shouldAnimate",
+        "时间轴",
+        "模型插值运动"
+      ],
+      "apis": [
+        "clock.shouldAnimate",
+        "SampledPositionProperty",
+        "VelocityOrientationProperty",
+        "TimeIntervalCollection",
+        "clock.onTick",
+        "camera.moveBackward"
+      ],
+      "signature": "kit.motion.animatePath([{lon,lat}...], {duration, multiplier}) / kit.motion.orbitAround({lon,lat}, {radius}) / kit.motion.limitPitch({minPitch, maxPitch}) -> {id, stop()}",
+      "snippet": "// 一段三点轨迹动画（北京→天津方向），循环播放，5 倍速\nconst h = kit.motion.animatePath(\n  [{ lon: 116.39, lat: 39.9, height: 5000 }, { lon: 117.2, lat: 39.2, height: 5000 }, { lon: 117.8, lat: 38.9, height: 5000 }],\n  { multiplier: 5 },\n);\nreturn { id: h.id, hint: 'kit.motion.stopAll() 停止并恢复时钟' };",
+      "experience": [
+        "2026-10-05-should-animate-clock",
+        "2026-10-05-camera-roaming-listeners",
+        "2026-10-05-particle-system",
+        "2026-10-05-frame-listener-leak"
+      ],
+      "lib": "cesium"
+    },
+    {
+      "id": "effects",
+      "package": "@geoai/cesium-kit-effects",
+      "source": "local",
+      "status": "ready",
+      "title": "全屏特效",
+      "summary": "雨 / 雪 / 深度雾全屏后处理：WebGL2 shader 程序化生成（无纹理资源），句柄化生命周期（remove/stopAll），雾自动跳过天空。",
+      "intents": [
+        "雨",
+        "雪",
+        "雾",
+        "天气",
+        "特效",
+        "下雨",
+        "下雪",
+        "氛围",
+        "rain",
+        "snow",
+        "fog",
+        "后处理"
+      ],
+      "apis": [
+        "PostProcessStage",
+        "postProcessStages.add",
+        "postProcessStages.remove",
+        "czm_frameNumber",
+        "czm_unpackDepth"
+      ],
+      "signature": "const h = kit.effects.rain({alpha}) / kit.effects.snow() / kit.effects.fog({density, color}) -> h.remove() / kit.effects.stopAll()",
+      "snippet": "// 雨 / 雪 / 雾三选一，句柄可随时摘除；换效果不用手动 remove\nawait kit.camera.flyToRegion({ west: 116.2, south: 39.7, east: 116.7, north: 40.1 }, { duration: 1 });\nconst rain = kit.effects.rain({ alpha: 0.4 });\n// const snow = kit.effects.snow(); const fog = kit.effects.fog({ density: 0.0002 });\nreturn { active: rain.name, hint: 'rain.remove() 摘除; kit.effects.stopAll() 全清' };",
+      "experience": [
+        "2026-10-05-webgl2-shader",
+        "2026-10-05-postprocess-uniform",
+        "2026-10-05-frame-listener-leak"
+      ],
+      "lib": "cesium"
+    },
+    {
+      "id": "analysis",
+      "package": "@geoai/cesium-kit-analysis",
+      "source": "local",
+      "status": "ready",
+      "title": "地形分析",
+      "summary": "地形开挖（globe 裁剪面，绕向无关）/ 淹没分析（水位按真实时间推进并封顶）/ 通视分析（沿线地形采样对比视线高）。",
+      "intents": [
+        "开挖",
+        "挖坑",
+        "淹没",
+        "水位",
+        "通视",
+        "视线",
+        "遮挡分析",
+        "地形分析",
+        "clipping",
+        "淹没分析"
+      ],
+      "apis": [
+        "ClippingPlaneCollection",
+        "ClippingPlane",
+        "CallbackProperty",
+        "sampleTerrainMostDetailed"
+      ],
+      "signature": "kit.analysis.excavate([{lon,lat}...], {edgeColor}) -> restore() / kit.analysis.flood(region, {startHeight, endHeight, seconds}) -> stop() / await kit.analysis.intervisibility(p1, p2)",
+      "snippet": "// 三类地形分析：开挖（还原用 restore）/ 淹没（自动封顶）/ 通视（要真实地形）\nconst dig = kit.analysis.excavate([{ lon: 116.39, lat: 39.90 }, { lon: 116.42, lat: 39.90 }, { lon: 116.42, lat: 39.93 }, { lon: 116.39, lat: 39.93 }]);\nconst water = kit.analysis.flood([{ lon: 116.39, lat: 39.90 }, { lon: 116.42, lat: 39.90 }, { lon: 116.42, lat: 39.93 }, { lon: 116.39, lat: 39.93 }], { startHeight: 0, endHeight: 50, seconds: 30 });\nconst see = await kit.analysis.intervisibility({ lon: 116.39, lat: 39.90 }, { lon: 116.42, lat: 39.93 });\nreturn { planes: dig.planes, waterId: water.id, blocked: see.blocked, minClearance: see.minClearance };",
+      "experience": [
+        "2026-10-05-globe-clipping-excavate",
+        "2026-10-05-polygon-height-semantics",
+        "2026-10-05-intervisibility-sampling",
+        "2026-10-05-terrain-height-timing"
+      ],
+      "lib": "cesium"
     }
   ],
   "external": [

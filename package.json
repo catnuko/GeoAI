@@ -1,7 +1,7 @@
 {
   "name": "geoai-mcp",
   "version": "0.6.0",
-  "description": "GeoAI —— GIS 经验注入中间件：把经验丰富的 GIS 专家封装成 MCP 服务器（经验库 + 能力库 + 真实 Cesium 执行验证）",
+  "description": "GeoAI —— GIS 经验注入中间件：把经验丰富的 GIS 专家封装成 MCP 服务器（经验库 + 能力库 + 真实地图执行验证，覆盖 Cesium / Leaflet / Mapbox / 高德与地理数据处理）",
   "license": "AGPL-3.0-only",
   "author": {
     "name": "catnuko",
@@ -43,6 +43,8 @@
     "start": "node scripts/server.js",
     "test": "node tests/test-client.js",
     "test:libs": "node tests/test-libs.js",
+    "test:multi": "node tests/test-multi-lib.js",
+    "test:data": "node tests/test-data.js",
     "export-skill": "node scripts/skill-export.js",
     "export-expert": "node scripts/expert-export.js",
     "lint:exp": "node scripts/experience-cli.js lint",

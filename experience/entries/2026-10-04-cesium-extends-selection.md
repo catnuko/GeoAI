@@ -2,6 +2,7 @@
 id: 2026-10-04-cesium-extends-selection
 title: cesium-extends 选型取舍：12 个子包哪些值得用、哪些不要，以及双 Cesium 前提
 kind: pattern
+lib: cesium
 tags: [cesium-extends, 选型, 第三方库, MIT, 双 Cesium, peerDependencies, 依赖评估]
 apis: []
 errors: [双 Cesium 实例, instanceof 失效, ScreenSpaceEventHandler 行为错乱]

@@ -2,6 +2,7 @@
 id: 2026-10-04-execution-context
 title: 页面执行上下文只有 viewer 和 Cesium 两个变量
 kind: pattern
+lib: cesium
 tags: [viewer, Cesium, 执行上下文, 全局变量]
 apis: [viewer, Cesium]
 errors: []

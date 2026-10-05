@@ -30,6 +30,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   KINDS,
   STATUSES,
+  LIBS,
+  DEFAULT_LIB,
   parseEntry,
   buildEntryMd,
   uniqueId,
@@ -90,6 +92,8 @@ function lintEntry(base, raw, allIds) {
   else if (!KINDS.has(meta.kind)) add('ERROR', `kind 非法: ${meta.kind}（允许 ${[...KINDS].join('/')}）`);
   if (!meta.status) add('WARN', '缺 status，解析时默认 draft');
   else if (!STATUSES.has(meta.status)) add('ERROR', `status 非法: ${meta.status}（允许 ${[...STATUSES].join('/')}）`);
+  if (!meta.lib) add('WARN', `缺 lib（归属域），解析时默认 ${DEFAULT_LIB}（leaflet/mapbox/amap/geo/data 域经验会被误归到 cesium）`);
+  else if (!LIBS.has(meta.lib)) add('ERROR', `lib 非法: ${meta.lib}（允许 ${[...LIBS].join('/')}）`);
   if (!meta.created) add('WARN', '缺 created（排序与淘汰依赖它）');
   else if (!CREATED_RE.test(meta.created)) add('ERROR', `created 非日期: ${meta.created}（应为 YYYY-MM-DD）`);
 
@@ -278,19 +282,25 @@ function cmdNew(argv) {
   const slug = sanitizeSlug(positional[0] ?? '');
   const title = String(flags.title ?? '').trim();
   const kind = flags.kind ?? 'pitfall';
-  if (!slug) return usage('用法: node experience-cli.js new <slug> --title "标题" [--kind pitfall] [--tag t]... [--api a]... [--error e]...');
+  const lib = String(flags.lib ?? DEFAULT_LIB).trim();
+  const lang = flags.lang === 'bash' ? 'bash' : 'js';
+  if (!slug) return usage('用法: node experience-cli.js new <slug> --title "标题" [--kind pitfall] [--lib cesium] [--lang js|bash] [--tag t]... [--api a]... [--error e]...');
   if (!title) return usage('new 需要 --title');
   if (!KINDS.has(kind)) return usage(`kind 非法: ${kind}（允许 ${[...KINDS].join('/')}）`);
+  if (!LIBS.has(lib)) return usage(`lib 非法: ${lib}（允许 ${[...LIBS].join('/')}）`);
 
   const date = new Date().toISOString().slice(0, 10);
   const id = `${date}-${slug}`;
   const file = path.join(ENTRIES_DIR, `${id}.md`);
   if (fs.existsSync(file)) return usage(`条目已存在: ${file}（换个 slug）`);
 
+  const todoMark = lang === 'bash' ? '#' : '//';
   const md = buildEntryMd({
     id,
     title,
     kind,
+    lib,
+    lang,
     tags: flags.tag ?? [],
     apis: flags.api ?? [],
     errors: flags.error ?? [],
@@ -300,7 +310,7 @@ function cmdNew(argv) {
     source: 'manual',
     trigger: kind === 'pitfall' ? `遇到「${title}」时` : '',
     problem: kind === 'pitfall' ? 'TODO: 现象 / 完整报错首行' : undefined,
-    code: kind === 'pitfall' ? '// TODO: 已验证的最小修法代码（实测通过后粘贴）' : '// TODO: 已验证代码',
+    code: kind === 'pitfall' ? `${todoMark} TODO: 已验证的最小修法代码（实测通过后粘贴）` : `${todoMark} TODO: 已验证代码`,
   });
 
   fs.mkdirSync(ENTRIES_DIR, { recursive: true });
@@ -331,12 +341,17 @@ function cmdFromNote(argv) {
 
   const raw = fs.readFileSync(notePath, 'utf8');
   const baseName = path.basename(notePath).replace(/\.(md|txt|markdown)$/i, '');
+  const lib = String(flags.lib ?? DEFAULT_LIB).trim();
+  if (!LIBS.has(lib)) return usage(`lib 非法: ${lib}（允许 ${[...LIBS].join('/')}）`);
 
   const title =
     String(flags.title ?? '').trim() ||
     (raw.match(/^#\s+(.+)$/m) ?? raw.match(/^##\s+(.+)$/m))?.[1]?.replace(/[#*`]/g, '').trim() ||
     baseName;
-  const codeMatch = raw.match(/```(?:js|javascript)\r?\n([\s\S]*?)```/) ?? raw.match(/```\r?\n([\s\S]*?)```/);
+  const codeMatch =
+    raw.match(/```(?:js|javascript)\r?\n([\s\S]*?)```/) ??
+    raw.match(/```(?:bash|sh|shell|console)\r?\n([\s\S]*?)```/) ??
+    raw.match(/```\r?\n([\s\S]*?)```/);
   const code = codeMatch ? codeMatch[1].trim() : '';
   const problem = (sectionOf(raw, '现象|报错|踩坑|问题') || '').slice(0, 500);
   const fix = (sectionOf(raw, '修法|解法|解决|修复') || '').slice(0, 500);
@@ -358,8 +373,9 @@ function cmdFromNote(argv) {
     id,
     title,
     kind,
+    lib,
     tags: [], // TODO: 补检索词（场景关键词 + API 名 + 报错签名）
-    apis: [], // TODO: 补涉及的 Cesium API
+    apis: [], // TODO: 补涉及的 API / CLI 工具名
     errors: [...errors],
     status: 'draft',
     successCount: 0,
@@ -396,8 +412,8 @@ function usage(msg) {
       '',
       '子命令:',
       '  lint                          校验 entries/*.md 与导出物 SKILL.md',
-      '  new <slug> --title "标题"     生成 draft 条目（--kind pitfall|pattern|snippet, --tag/--api/--error 可重复）',
-      '  from-note <note.md>           笔记启发式转化为 draft 条目（--dry-run 预览, --kind, --title, --slug）',
+      '  new <slug> --title "标题"     生成 draft 条目（--kind pitfall|pattern|snippet, --lib cesium|leaflet|mapbox|amap|geo|data, --lang js|bash, --tag/--api/--error 可重复）',
+      '  from-note <note.md>           笔记启发式转化为 draft 条目（--dry-run 预览, --kind, --lib, --title, --slug）',
     ].join('\n'),
   );
   return false;

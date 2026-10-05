@@ -2,6 +2,7 @@
 id: 2026-10-04-flyto-moveend
 title: camera.flyTo 不返回 Promise, 想等动画结束用 moveEnd.addEventListener
 kind: pitfall
+lib: cesium
 tags: [flyTo, 相机, 动画, 等待, moveEnd, Promise]
 apis: [camera.flyTo, camera.moveEnd.addEventListener]
 errors: [flyTo 返回 undefined, 等不到动画结束, camera.once is not a function]
@@ -37,3 +38,5 @@ return new Promise((resolve) => {
 });
 // run_code 返回: 执行成功，返回："moveEnd-ok"（且回执耗时 ≥ duration）
 ```
+
+> 相关: [[2026-10-05-flyto-easing]]（终点减速顿挫的缓动参数）

@@ -2,6 +2,7 @@
 id: 2026-10-04-arcgis-world-imagery-terrain3d
 title: 加载 ArcGIS 免费图层: 影像底图 + 地形（World_Imagery / Terrain3D）
 kind: pattern
+lib: cesium
 tags: [ArcGIS, 影像, 底图, 地形, imagery, terrain, World_Imagery, 免费图层]
 apis: [ArcGisMapServerImageryProvider.fromUrl, ArcGISTiledElevationTerrainProvider.fromUrl, imageryLayers.addImageryProvider, sampleTerrainMostDetailed]
 errors: []
@@ -41,3 +42,5 @@ viewer.terrainProvider = await Cesium.ArcGISTiledElevationTerrainProvider.fromUr
 //   [Cesium.Cartographic.fromDegrees(86.925, 27.988)]) → 珠峰采样 8837m（实测）
 // 注意: ArcGIS 境外服务, 国内合规场景仍用天地图(见 solid-globe-not-bug 条目); 商用请自查 Esri 条款
 ```
+
+> 相关: [[2026-10-05-async-factory-migration]]（fromUrl 迁移全表）· [[2026-10-05-terrain-height-timing]]（地形采样时序）· [[2026-10-05-viewer-constructor-once]]（baseLayer 构造项）

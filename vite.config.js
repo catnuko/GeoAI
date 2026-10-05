@@ -30,6 +30,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         cesium: fileURLToPath(new URL('./playgrounds/cesium/index.html', import.meta.url)),
+        leaflet: fileURLToPath(new URL('./playgrounds/leaflet/index.html', import.meta.url)),
+        mapbox: fileURLToPath(new URL('./playgrounds/mapbox/index.html', import.meta.url)),
+        amap: fileURLToPath(new URL('./playgrounds/amap/index.html', import.meta.url)),
       },
     },
   },

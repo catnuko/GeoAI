@@ -2,6 +2,7 @@
 id: 2026-10-04-overlay-custom-container-crash
 title: DOM 跟随层挂自定义容器时销毁必崩；enabled 重复赋值会让内容翻倍
 kind: pitfall
+lib: cesium
 tags: [overlay, popup, tooltip, DOM, 销毁, removeChild, NotFoundError, 生命周期]
 apis: [SceneTransforms.worldToWindowCoordinates, Occluder, scene.postRender.addEventListener]
 errors: [NotFoundError, 节点不是该节点的子节点, 内容显示两遍, destroy 后 DOM 残留]

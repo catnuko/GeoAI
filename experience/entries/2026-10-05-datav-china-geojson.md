@@ -2,6 +2,7 @@
 id: 2026-10-05-datav-china-geojson
 title: 获取中国行政区划 GeoJSON（DataV 在线数据，免 key，省/市/县三级实测）
 kind: pattern
+lib: cesium
 tags: [GeoJSON, 行政区划, 行政边界, adcode, DataV, 阿里, 中国, 边界, 省市县, 区划]
 apis: [fetch, GeoJsonDataSource.load, viewer.dataSources.add]
 errors: []

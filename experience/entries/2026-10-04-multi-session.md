@@ -2,6 +2,7 @@
 id: 2026-10-04-multi-session
 title: 多标签页并行用 ?session=区分; 同 id 后连入会替换先连入
 kind: pattern
+lib: cesium
 tags: [session, 多会话, 多标签页, 并行]
 apis: []
 errors: [发到了别的页面]

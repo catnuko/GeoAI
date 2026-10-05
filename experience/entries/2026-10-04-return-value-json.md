@@ -2,6 +2,7 @@
 id: 2026-10-04-return-value-json
 title: return 的值会被序列化回传给模型, 忘写 return 则返回 undefined
 kind: pattern
+lib: cesium
 tags: [return, 返回值, 调试]
 apis: []
 errors: [undefined]

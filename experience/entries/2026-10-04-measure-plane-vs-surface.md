@@ -2,6 +2,7 @@
 id: 2026-10-04-measure-plane-vs-surface
 title: 量算的平面与贴地双模式；原库「不带 Surface 后缀的版本默认不贴地」很反直觉
 kind: pitfall
+lib: cesium
 tags: [measure, 量算, 面积, 距离, 贴地, surface, plane, 单位]
 apis: [EllipsoidGeodesic.surfaceDistance, Cartesian3.distance, globe.getHeight]
 errors: [面积算成平面投影, 距离偏小, 单位突然跳变, 面积不一致]

@@ -2,6 +2,7 @@
 id: 2026-10-04-return-promise-await
 title: return 一个 Promise 会被等待, 异步结果经回执返回给模型
 kind: pattern
+lib: cesium
 tags: [异步, Promise, await, 回执, setTimeout]
 apis: []
 errors: []

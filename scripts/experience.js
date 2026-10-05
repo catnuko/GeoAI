@@ -24,6 +24,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const KINDS = new Set(['pitfall', 'snippet', 'pattern']);
 export const STATUSES = new Set(['draft', 'verified', 'broken']);
+/** 经验归属域：geo=跨库地理通识（坐标系/瓦片方案/投影）, data=数据处理与 CLI 工具（GDAL/tippecanoe/3d-tiles-tools）, 其余为目标地图库（与 playgrounds/ 目录名一致） */
+export const LIBS = new Set(['cesium', 'leaflet', 'mapbox', 'amap', 'geo', 'data']);
+/** 缺省归属域：存量条目均为 Cesium */
+export const DEFAULT_LIB = 'cesium';
+
+/** 归一化归属域；缺失/未知回落缺省（未知值由 lint 报 ERROR，解析侧不抛错保证检索可用） */
+function normalizeLib(v) {
+  const s = String(v ?? '').trim().toLowerCase();
+  return LIBS.has(s) ? s : DEFAULT_LIB;
+}
 
 export function storeDir() {
   return process.env.GEOAI_EXPERIENCE_DIR || path.join(__dirname, '..', 'experience');
@@ -83,6 +93,7 @@ export function parseEntry(file, raw) {
     id: String(meta.id),
     title: String(meta.title),
     kind: KINDS.has(meta.kind) ? meta.kind : 'pattern',
+    lib: normalizeLib(meta.lib),
     tags: toArray(meta.tags),
     apis: toArray(meta.apis),
     errors: toArray(meta.errors),
@@ -93,8 +104,10 @@ export function parseEntry(file, raw) {
   };
   const trig = body.match(/##\s*什么时候用\s*\n+([^\n]+)/);
   entry.trigger = trig ? trig[1].trim() : '';
-  const code = body.match(/```(?:js|javascript)\r?\n([\s\S]*?)```/);
-  entry.code = code ? code[1].trim() : '';
+  // 代码块语言: js/javascript 之外的 bash 家族（数据处理经验是 shell 命令）也提取, lang 记录原语言
+  const codeM = body.match(/```(js|javascript|bash|sh|shell|console)\r?\n([\s\S]*?)```/);
+  entry.code = codeM ? codeM[2].trim() : '';
+  entry.lang = codeM && codeM[1] !== 'js' && codeM[1] !== 'javascript' ? 'bash' : 'js';
   entry.body = body;
   entry.file = file;
   entry.raw = raw;
@@ -171,6 +184,7 @@ export function buildEntryMd(e) {
     id: e.id,
     title: e.title,
     kind: e.kind,
+    lib: e.lib ?? DEFAULT_LIB,
     tags: e.tags ?? [],
     apis: e.apis ?? [],
     errors: e.errors ?? [],
@@ -189,7 +203,8 @@ export function buildEntryMd(e) {
     parts.push('## 现象 / 报错', String(e.problem).slice(0, 500), '');
   }
   if (e.code) {
-    parts.push(e.kind === 'pitfall' ? '## 修法（已验证代码）' : '## 代码（已验证）', '```js', String(e.code).slice(0, 2000), '```', '');
+    const fence = e.lang === 'bash' ? 'bash' : 'js';
+    parts.push(e.kind === 'pitfall' ? '## 修法（已验证代码）' : '## 代码（已验证）', `\`\`\`${fence}`, String(e.code).slice(0, 2000), '```', '');
   }
   if (e.fix) {
     parts.push('修法说明:', String(e.fix).slice(0, 500), '');
@@ -229,6 +244,8 @@ export function saveExperience(input, { source = 'model' } = {}) {
     id,
     title,
     kind: input.kind,
+    lib: normalizeLib(input.lib),
+    lang: input.lang === 'bash' ? 'bash' : 'js',
     tags: input.tags ?? [],
     apis: input.apis ?? [],
     errors: input.errors ?? [],
@@ -250,8 +267,9 @@ export function saveExperience(input, { source = 'model' } = {}) {
 /**
  * run_code 失败时自动捕获: 以报错首行ident为键写一条 draft 坑位。
  * 同一报错(首行相同)不重复捕获。返回 { id } 或 null(重复/无内容)。
+ * lib: 失败发生的试炼场对应的归属域（server 按 session->playground 推导后传入）。
  */
-export function captureFailure(code, errorText) {
+export function captureFailure(code, errorText, lib) {
   const firstLine = String(errorText ?? '').split('\n')[0].trim().slice(0, 80);
   if (!firstLine) return null;
   const norm = firstLine.toLowerCase();
@@ -264,6 +282,7 @@ export function captureFailure(code, errorText) {
     id,
     title: `自动捕获: ${firstLine}`,
     kind: 'pitfall',
+    lib: normalizeLib(lib),
     tags: [],
     apis: [],
     errors: [firstLine],
@@ -291,9 +310,10 @@ export function getEntryById(id) {
 
 /**
  * 关键词检索。打分: 标题 5 / 报错签名 4 / tags 3 / apis 3 / 正文 1,
+ * opts.lib 与条目归属域一致时 +4（不硬过滤, 跨域命中仍返回, 仅排序优先本域）,
  * 同分按 successCount 降序。返回 [{ entry, score }]。
  */
-export function searchExperience(query, limit = 3) {
+export function searchExperience(query, limit = 3, opts = {}) {
   const tokens = String(query ?? '')
     .toLowerCase()
     .split(/[\s,，。;；:：]+/)
@@ -314,6 +334,7 @@ export function searchExperience(query, limit = 3) {
       if (apis.some((x) => x.includes(t))) score += 3;
       if (body.includes(t)) score += 1;
     }
+    if (score > 0 && opts.lib && e.lib === opts.lib) score += 4;
     if (score > 0) scored.push({ entry: e, score });
   }
   return scored

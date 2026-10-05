@@ -2,6 +2,7 @@
 id: 2026-10-04-drawer-cancel-clears-all
 title: 绘图中右键「取消」在点数不足时会清空整个图形，而不是删一个点
 kind: pitfall
+lib: cesium
 tags: [drawer, 取消, 右键, cancel, 绘制, 交互, 反直觉]
 apis: [entities.remove, ScreenSpaceEventHandler]
 errors: [右键一下图形全没了, 画到一半白画, 撤销行为不符预期]

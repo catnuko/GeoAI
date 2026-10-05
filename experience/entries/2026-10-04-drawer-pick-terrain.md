@@ -2,6 +2,7 @@
 id: 2026-10-04-drawer-pick-terrain
 title: 鼠标拾取地表坐标的三条分支互斥；model 模式下 terrain 会静默失效
 kind: pitfall
+lib: cesium
 tags: [drawer, pick, 拾取, 贴地, terrain, ellipsoid, pickPosition, 深度纹理]
 apis: [camera.pickEllipsoid, camera.getPickRay, globe.pick, scene.pickPosition, pickPositionSupported]
 errors: [点浮在地形上面, 点埋在地形里, model 无效, terrain 无效]
@@ -61,3 +62,5 @@ if (viewer.scene.pickPositionSupported) {
   const cart = viewer.scene.pickPosition(new Cesium.Cartesian2(x, y));
 }
 ```
+
+> 相关: [[2026-10-05-default-click-handler]]（默认双击/选中行为的摘除位置——两个 handler 对象）

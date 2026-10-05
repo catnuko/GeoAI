@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GeoAI · MCP → WebSocket → Leaflet 桥接</title>
+
+    <!--
+      加载顺序要求（与 cesium 试炼场一致）：Leaflet 全局脚本必须先于 Monaco AMD loader 执行。
+      Leaflet 内含 UMD 模块会检测全局 define.amd，若 loader.js 先注入 define 会触发
+      "Can only have one anonymous define call per script file" 冲突。
+    -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Monaco Editor：AMD loader -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+    <script>
+      require.config({
+        paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' },
+      });
+    </script>
+  </head>
+  <body>
+    <header id="topbar">
+      <span class="brand">GeoAI</span>
+      <span id="wsStatus" class="badge badge-off">WebSocket: 连接中…</span>
+      <span class="hint">MCP → stdio → WS → 本页 → Leaflet</span>
+      <button id="runBtn" type="button" title="等价于 MCP 工具 run_code">▶ 运行编辑器代码</button>
+    </header>
+
+    <main id="layout">
+      <section id="leftPane">
+        <div class="pane-title">JavaScript（可用 map / L）</div>
+        <div id="editor"></div>
+        <div id="logPane" class="log-pane"></div>
+      </section>
+      <section id="rightPane">
+        <div class="pane-title">Leaflet 2D 地图</div>
+        <div id="mapContainer"></div>
+        <div id="runResult" class="run-result">等待执行…</div>
+      </section>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

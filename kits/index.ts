@@ -14,11 +14,16 @@
  * 能力库一览（全部注入式，Cesium 从入参拿）：
  *   core    契约层：生命周期与断言
  *   camera  相机：飞行取景 / lookAt 跟随 / 等动画结束
- *   imagery 影像与地形：免 key 底图 / 3D 地形 / 高程采样
+ *   imagery 影像与地形：免 key 底图 / 天地图 / 4490 / WMS / 3D 地形 / 高程采样
  *   geojson 行政边界：DataV 中国区划 fetch / load / 摘取下级
  *   drawer  绘图：点线面圆矩形 + 贴地拾取三分支
  *   measure 量算：距离与面积，平面 / 贴地双模式
  *   overlay 跟随层：经纬度锚定弹窗 / 鼠标悬浮提示
+ *   tiles   3D Tiles：加载 / ENU 正确抬升 / CustomShader 染色与清除
+ *   points  海量点位：Collection 批量渲染 + 贴地双保险
+ *   motion  轨迹动画：时钟驱动路径运动（shouldAnimate / UTC+8 / availability 三坑内置）
+ *   effects 全屏特效：雨 / 雪 / 深度雾（WebGL2 shader，句柄化生命周期）
+ *   analysis 地形分析：开挖（裁剪面）/ 淹没（水位动画）/ 通视（沿线采样）
  */
 
 import { createKit } from './cesium-kit-core/index';
@@ -35,6 +40,16 @@ import { createMeasureKit } from './cesium-kit-measure/index';
 import type { MeasureKit } from './cesium-kit-measure/index';
 import { createOverlayKit } from './cesium-kit-overlay/index';
 import type { OverlayKit } from './cesium-kit-overlay/index';
+import { createTilesKit } from './cesium-kit-tiles/index';
+import type { TilesKit } from './cesium-kit-tiles/index';
+import { createPointsKit } from './cesium-kit-points/index';
+import type { PointsKit } from './cesium-kit-points/index';
+import { createMotionKit } from './cesium-kit-motion/index';
+import type { MotionKit } from './cesium-kit-motion/index';
+import { createEffectsKit } from './cesium-kit-effects/index';
+import type { EffectsKit } from './cesium-kit-effects/index';
+import { createAnalysisKit } from './cesium-kit-analysis/index';
+import type { AnalysisKit } from './cesium-kit-analysis/index';
 import registryJson from './registry.json' with { type: 'json' };
 import type { Registry } from './registry-schema';
 
@@ -45,6 +60,11 @@ export { createGeoJsonKit, adminUrl } from './cesium-kit-geojson/index';
 export { createDrawerKit } from './cesium-kit-drawer/index';
 export { createMeasureKit } from './cesium-kit-measure/index';
 export { createOverlayKit } from './cesium-kit-overlay/index';
+export { createTilesKit } from './cesium-kit-tiles/index';
+export { createPointsKit } from './cesium-kit-points/index';
+export { createMotionKit } from './cesium-kit-motion/index';
+export { createEffectsKit } from './cesium-kit-effects/index';
+export { createAnalysisKit } from './cesium-kit-analysis/index';
 export { DomUtil, Widget } from './cesium-kit-dom/index';
 export type { Kit, Disposable, CesiumLike, CreateKitOptions } from './cesium-kit-core/index';
 export type { CameraKit, BoundingBox, FlyOptions, FlyResult, CameraSnapshot } from './cesium-kit-camera/index';
@@ -86,6 +106,43 @@ export type {
   ScreenPoint,
   Anchor,
 } from './cesium-kit-overlay/index';
+export type {
+  TilesKit,
+  TilesLoadResult,
+  TilesOpResult,
+  TilesRemoveResult,
+  TilesShaderSpec,
+} from './cesium-kit-tiles/index';
+export type {
+  PointsKit,
+  PointItem,
+  PointsAddOptions,
+  PointsAddResult,
+  PointsRemoveResult,
+} from './cesium-kit-points/index';
+export type {
+  MotionKit,
+  MotionPoint,
+  MotionOptions,
+  MotionHandle,
+  MotionStopResult,
+} from './cesium-kit-motion/index';
+export type {
+  EffectsKit,
+  EffectName,
+  EffectHandle,
+  PrecipitationOptions,
+  FogOptions,
+  EffectsStopResult,
+} from './cesium-kit-effects/index';
+export type {
+  AnalysisKit,
+  LonLatPoint,
+  ExcavateHandle,
+  FloodHandle,
+  IntervisibilityResult,
+  AnalysisStopResult,
+} from './cesium-kit-analysis/index';
 export type { Registry, KitEntry, ExternalEntry } from './registry-schema';
 
 /** 装配后的 kit：core 契约 + 各能力库 */
@@ -96,12 +153,17 @@ export interface GeoAIKit extends Kit {
   readonly drawer: DrawerKit;
   readonly measure: MeasureKit;
   readonly overlay: OverlayKit;
+  readonly tiles: TilesKit;
+  readonly points: PointsKit;
+  readonly motion: MotionKit;
+  readonly effects: EffectsKit;
+  readonly analysis: AnalysisKit;
 }
 
 /**
  * 装配所有子库。Cesium 由调用方传入（CDN 全局或 npm 均可）。
  * @param args Cesium 命名空间与 viewer
- * @returns 带 camera / imagery / geojson / drawer / measure / overlay 的 kit 对象
+ * @returns 带 camera / imagery / geojson / drawer / measure / overlay / tiles / points / motion / effects / analysis 的 kit 对象
  */
 export function mountKits({ Cesium, viewer }: { Cesium: unknown; viewer: unknown }): GeoAIKit {
   const kit = createKit({ Cesium, viewer, name: 'geoai' });
@@ -112,6 +174,11 @@ export function mountKits({ Cesium, viewer }: { Cesium: unknown; viewer: unknown
     drawer: kit.use(createDrawerKit),
     measure: kit.use(createMeasureKit),
     overlay: kit.use(createOverlayKit),
+    tiles: kit.use(createTilesKit),
+    points: kit.use(createPointsKit),
+    motion: kit.use(createMotionKit),
+    effects: kit.use(createEffectsKit),
+    analysis: kit.use(createAnalysisKit),
   });
 }
 

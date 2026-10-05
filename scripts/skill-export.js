@@ -40,13 +40,17 @@ function fmtEntry(entry) {
   lines.push(`### ${m.title}`);
   lines.push(`- 什么时候用: ${m.trigger || '(见代码)'}`);
   lines.push(`- id: ${m.id}（geoai MCP get_experience 可查全文; 成功 ${m.successCount} 次）`);
+  // 归属域标注: 非 cesium 域的条目（geo 通识 / data 数据处理）提示适用范围, 防止跨域误抄
+  if (m.lib && m.lib !== 'cesium') {
+    lines.push(`- 归属域: ${m.lib}${m.lib === 'geo' ? '（跨库通识, 各地图库通用）' : m.lib === 'data' ? '（数据处理/CLI 工具, 在宿主 shell 执行）' : `（${m.lib} 页面）`}`);
+  }
   // A 方案·互导：经验条目在导出物里也标出对应的库，避免 harness 只抄代码不用库
   const kits = kitsForExperience(m.id).filter((k) => k.status === 'ready');
   if (kits.length) {
     lines.push(`- ⚡ 已封装为库: \`kit.${kits.map((k) => k.id).join('` / `kit.')}\`（优先用库）`);
   }
   if (m.code) {
-    lines.push('```js', m.code, '```');
+    lines.push(`\`\`\`${m.lang === 'bash' ? 'bash' : 'js'}`, m.code, '```');
   }
   lines.push('');
   return lines.join('\n');
@@ -142,7 +146,9 @@ function main() {
     process.exit(1);
   }
   const top = [...index]
-    .sort((a, b) => (b.successCount || 0) - (a.successCount || 0) || (b.created || '').localeCompare(a.created || ''))
+    // verified 优先: draft 批量入库时不能以"更新"挤掉已验证经验（热集宣称全是已验证代码）
+    .sort((a, b) => (b.status === 'verified') - (a.status === 'verified')
+      || (b.successCount || 0) - (a.successCount || 0) || (b.created || '').localeCompare(a.created || ''))
     .slice(0, args.top);
   const skill = renderSkill(top);
 

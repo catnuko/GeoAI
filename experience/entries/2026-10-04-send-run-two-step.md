@@ -2,6 +2,7 @@
 id: 2026-10-04-send-run-two-step
 title: send_code 只把代码放进编辑器, run_code 才执行; 下发是整体覆盖不是追加
 kind: pattern
+lib: cesium
 tags: [send_code, run_code, 编辑器, 覆盖]
 apis: []
 errors: [代码没执行, 改了没生效]

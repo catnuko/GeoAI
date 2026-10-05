@@ -90,7 +90,10 @@ async function main() {
   // ---------- 2. list_libs ----------
   out('\n【2】list_libs 检索');
   const all = await call(client, 'list_libs', {});
-  check('无参返回全部 kit', all.text.includes('camera') && all.text.includes('imagery'));
+  check(
+    '无参返回全部 kit',
+    all.text.includes('camera') && all.text.includes('imagery') && all.text.includes('tiles') && all.text.includes('points') && all.text.includes('motion'),
+  );
   check('标注了执行上下文变量', all.text.includes('viewer, Cesium, kit'));
   check('登记了外部包 cesium-extends', all.text.includes('cesium-extends'));
 
@@ -121,6 +124,12 @@ async function main() {
   check('关联经验条目', doc.text.includes('2026-10-04-lookat-unlock'));
   const bad = await call(client, 'get_lib_doc', { id: 'not-exist' });
   check('不存在的 id 返回 isError', bad.isError);
+  const docTiles = await call(client, 'get_lib_doc', { id: 'tiles' });
+  check(
+    'tiles 文档返回签名与关联经验',
+    docTiles.text.includes('kit.tiles.lift') && docTiles.text.includes('2026-10-05-3dtiles-modelmatrix-enu'),
+    docTiles.text.slice(0, 160),
+  );
 
   // ---------- 4. 打开页面 ----------
   out('\n【4】打开页面');
@@ -275,6 +284,148 @@ return JSON.stringify({
     check('removeAll 清理了数据源', gj.removedCount === 1, String(gj.removedCount));
   } else {
     check('geojson 行为探测返回可解析 JSON', false, gjOut.text.slice(0, 300));
+  }
+
+  // ---------- 5d. imagery 新能力：天地图/4490/批量采样（离线可测部分） ----------
+  out('\n【5d】imagery 天地图/4490/采样');
+  await call(client, 'send_code', {
+    code: `// tiandituImagery: 无 key 报申请入口；_c/_w 投影各自构造成功（层号规则在库内）
+const noTk = await Promise.resolve().then(() => kit.imagery.tiandituImagery('')).then(() => null, (e) => String(e.message || e));
+const w = kit.imagery.tiandituImagery('test-key', { layer: 'img' });
+const c = kit.imagery.tiandituImagery('test-key', { layer: 'vec', projection: 'c' });
+// add4490: 缺 {z4490} 占位要报可读错误；带占位的正常加层（example.invalid 会 404 但不影响构造）
+const add4490ok = kit.imagery.add4490('http://example.invalid/{z4490}/{x}_{y}.png');
+const add4490bad = await Promise.resolve().then(() => kit.imagery.add4490('http://example.invalid/{z}.png')).then(() => null, (e) => String(e.message || e));
+// sampleHeights: 弧度转换内置（此前度数直传恒返回 0 的 bug 已修）；椭球地形下高度为 0 但不炸
+const hs = await kit.imagery.sampleHeights([{ lon: 116.39, lat: 39.9 }, { lon: 121.5, lat: 31.24 }]);
+const removedLayers = kit.imagery.removeAll();
+return JSON.stringify({
+  noTk: noTk && noTk.includes('lbs.tianditu.gov.cn'),
+  wOk: !!w, cOk: !!c,
+  add4490ok: add4490ok.ok, add4490bad: add4490bad && add4490bad.includes('{z4490}'),
+  heightCount: hs.heights.length,
+  removedLayers: removedLayers.removed,
+});`,
+  });
+  const imOut = await call(client, 'run_code', {});
+  const im = parseRunJson(imOut.text);
+  if (im) {
+    out('  页面回传: ' + JSON.stringify(im));
+    check('天地图无 key 报申请入口', im.noTk === true, String(im.noTk));
+    check('天地图 _w/_c 两投影构造成功', im.wOk === true && im.cOk === true);
+    check('add4490 正常加层', im.add4490ok === true);
+    check('add4490 缺 {z4490} 报可读错误', im.add4490bad === true, String(im.add4490bad));
+    check('sampleHeights 返回等长高程数组', im.heightCount === 2, String(im.heightCount));
+    check('removeAll 清理了测试图层', im.removedLayers >= 1, String(im.removedLayers));
+  } else {
+    check('imagery 新能力探测返回可解析 JSON', false, imOut.text.slice(0, 300));
+  }
+
+  // ---------- 5e. tiles / points / track 库行为（离线可测部分） ----------
+  out('\n【5e】tiles / points / track 行为');
+  await call(client, 'send_code', {
+    code: `// tiles: 坏 URL 报归因错误（连接被拒也走同一出口）
+const tilesErr = await kit.tiles.load('http://127.0.0.1:9/nonexistent/tileset.json').then(() => null, (e) => String(e.message || e));
+// points: 万级批量（Collection 单次 batch）+ 非法颜色报错 + 清空
+const pts = kit.points.addMany(
+  Array.from({ length: 10000 }, () => ({ lon: 73 + Math.random() * 62, lat: 18 + Math.random() * 30, color: '#38f' })),
+  { scaleByDistance: [2.0e6, 1.0, 8.0e6, 0.1] },
+);
+const badColor = await Promise.resolve().then(() => kit.points.addMany([{ lon: 116, lat: 39, color: 'not-a-color' }])).then(() => null, (e) => String(e.message || e));
+const cleared = kit.points.clear();
+// track: 自动开 shouldAnimate + multiplier 生效 + stop 摘实体恢复时钟
+const before = { shouldAnimate: viewer.clock.shouldAnimate };
+const h = kit.motion.animatePath([
+  { lon: 116.39, lat: 39.9, height: 5000 },
+  { lon: 117.2, lat: 39.2, height: 5000 },
+], { multiplier: 5 });
+const clockOn = { shouldAnimate: viewer.clock.shouldAnimate, multiplier: viewer.clock.multiplier };
+const entityThere = !!viewer.entities.getById(h.id);
+const stopped = h.stop();
+const clockRestored = viewer.clock.shouldAnimate === before.shouldAnimate;
+const tinyErr = await Promise.resolve().then(() => kit.motion.animatePath([{ lon: 116, lat: 39 }])).then(() => null, (e) => String(e.message || e));
+return JSON.stringify({
+  tilesErr: tilesErr && tilesErr.includes('3D Tiles 加载失败'),
+  count: pts.count, points: pts.points,
+  badColor: badColor && badColor.includes('无法解析颜色'),
+  cleared: cleared.removed,
+  clockOn, entityThere,
+  stoppedOk: stopped.ok, clockRestored,
+  tinyErr: tinyErr && tinyErr.includes('至少需要 2 个路径点'),
+});`,
+  });
+  const tkOut = await call(client, 'run_code', {});
+  const tk = parseRunJson(tkOut.text);
+  if (tk) {
+    out('  页面回传: ' + JSON.stringify(tk));
+    check('tiles 坏 URL 报出归因错误', tk.tilesErr === true, String(tk.tilesErr));
+    check('points.addMany 一万点批量成功', tk.count === 10000 && tk.points === 10000, JSON.stringify({ count: tk.count, points: tk.points }));
+    check('points 非法颜色给出可读报错', tk.badColor === true, String(tk.badColor));
+    check('points.clear 清空 collection', tk.cleared >= 1, String(tk.cleared));
+    check('track.animatePath 自动开 shouldAnimate', tk.clockOn?.shouldAnimate === true, JSON.stringify(tk.clockOn));
+    check('track multiplier 生效', tk.clockOn?.multiplier === 5, String(tk.clockOn?.multiplier));
+    check('track 实体已加入场景', tk.entityThere === true);
+    check('track.stop 摘实体并恢复时钟', tk.stoppedOk === true && tk.clockRestored === true);
+    check('track 少于 2 点报可读错误', tk.tinyErr === true, String(tk.tinyErr));
+  } else {
+    check('tiles/points/track 行为探测返回可解析 JSON', false, tkOut.text.slice(0, 300));
+  }
+
+  // ---------- 5f. effects / analysis / motion 扩展（离线可测部分） ----------
+  out('\n【5f】effects / analysis / motion 扩展');
+  await call(client, 'send_code', {
+    code: `// effects: 三个 stage 加入后手动 render 一帧, shader 编译失败会在此暴露
+const rain = kit.effects.rain();
+const snow = kit.effects.snow();
+const fog = kit.effects.fog({ density: 0.0002 });
+let renderErr = null;
+try { viewer.scene.render(Cesium.JulianDate.now()); } catch (e) { renderErr = String(e.message || e); }
+const stageCount = viewer.scene.postProcessStages.length;
+const rainRemoved = rain.remove().removed;
+kit.effects.stopAll();
+// analysis: 开挖/淹没/通视
+const dig = kit.analysis.excavate([{ lon: 116.39, lat: 39.90 }, { lon: 116.42, lat: 39.90 }, { lon: 116.42, lat: 39.93 }, { lon: 116.39, lat: 39.93 }]);
+const digRestored = dig.restore().ok;
+const water = kit.analysis.flood([{ lon: 116.39, lat: 39.90 }, { lon: 116.42, lat: 39.90 }, { lon: 116.42, lat: 39.93 }], { startHeight: 0, endHeight: 50, seconds: 30 });
+const waterThere = !!viewer.entities.getById(water.id);
+const waterStopped = water.stop().ok;
+const see = await kit.analysis.intervisibility({ lon: 116.39, lat: 39.90 }, { lon: 116.42, lat: 39.93 }, { samples: 20 });
+// motion 扩展: 绕点/限俯仰——stop 摘 onTick
+const orbit = kit.motion.orbitAround({ lon: 116.39, lat: 39.9 }, { radius: 50000 });
+const orbitAnimating = viewer.clock.shouldAnimate === true;
+const orbitStopped = orbit.stop().ok;
+const pitch = kit.motion.limitPitch({ minPitch: -60, maxPitch: -20 });
+const pitchStopped = pitch.stop().ok;
+// imagery 剖面 + points 标注
+const prof = await kit.imagery.sampleProfile({ lon: 116.39, lat: 39.90 }, { lon: 116.42, lat: 39.93 }, { samples: 10 });
+const labeled = kit.points.addMany([{ lon: 116.39, lat: 39.9, text: '测试标注' }], { clampToGround: true });
+kit.points.clear();
+return JSON.stringify({
+  renderErr, stageCount, rainRemoved,
+  digPlanes: dig.planes, digRestored, waterThere, waterStopped,
+  seeBlocked: see.blocked, seeSampled: see.sampled,
+  orbitAnimating, orbitStopped, pitchStopped,
+  profLen: prof.profile.length, labels: labeled.labels,
+});`,
+  });
+  const efOut = await call(client, 'run_code', {});
+  const ef = parseRunJson(efOut.text);
+  if (ef) {
+    out('  页面回传: ' + JSON.stringify(ef));
+    check('effects 三 stage 加入后手动 render 无异常', ef.renderErr === null, String(ef.renderErr));
+    check('rain.remove 摘除 stage', ef.rainRemoved === 1);
+    check('stopAll 后 stage 清空', ef.stageCount >= 2, String(ef.stageCount));
+    check('excavate 生成 4 个裁剪面', ef.digPlanes === 4, String(ef.digPlanes));
+    check('excavate.restore 还原成功', ef.digRestored === true);
+    check('flood 水面实体已加入', ef.waterThere === true);
+    check('flood.stop 移除水面', ef.waterStopped === true);
+    check('intervisibility 返回结果（椭球必通视）', ef.seeBlocked === false && ef.seeSampled === 0, JSON.stringify(ef.seeBlocked));
+    check('orbitAround 自动开时钟', ef.orbitAnimating === true);
+    check('orbit.stop / limitPitch.stop 摘除成功', ef.orbitStopped === true && ef.pitchStopped === true);
+    check('sampleProfile 返回等分剖面', ef.profLen === 10, String(ef.profLen));
+    check('points 贴地标注走 LabelCollection', ef.labels === 1, String(ef.labels));
+  } else {
+    check('effects/analysis/motion 扩展探测返回可解析 JSON', false, efOut.text.slice(0, 300));
   }
 
   // ---------- 6. flyToRegion真的驱动相机（验证坑：flyTo 不返回 Promise） ----------

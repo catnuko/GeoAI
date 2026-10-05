@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GeoAI · MCP → WebSocket → 高德地图桥接</title>
+
+    <!--
+      加载顺序要求（与 cesium 试炼场一致）：全局脚本必须先于 Monaco AMD loader 执行。
+      这里只引 AMap JSAPI Loader（官方动态加载器，key 在运行时由 main.js 从 /config.json 取），
+      避免 key 硬编码进页面。
+    -->
+    <script src="https://webapi.amap.com/loader.js"></script>
+
+    <!-- Monaco Editor：AMD loader -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+    <script>
+      require.config({
+        paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' },
+      });
+    </script>
+  </head>
+  <body>
+    <header id="topbar">
+      <span class="brand">GeoAI</span>
+      <span id="wsStatus" class="badge badge-off">WebSocket: 连接中…</span>
+      <span class="hint">MCP → stdio → WS → 本页 → 高德 JSAPI</span>
+      <button id="runBtn" type="button" title="等价于 MCP 工具 run_code">▶ 运行编辑器代码</button>
+    </header>
+
+    <main id="layout">
+      <section id="leftPane">
+        <div class="pane-title">JavaScript（可用 map / AMap）</div>
+        <div id="editor"></div>
+        <div id="logPane" class="log-pane"></div>
+      </section>
+      <section id="rightPane">
+        <div class="pane-title">高德 JSAPI 地图</div>
+        <div id="mapContainer"></div>
+        <div id="runResult" class="run-result">等待执行…</div>
+      </section>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

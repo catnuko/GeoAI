@@ -6,7 +6,7 @@
 
 - **写之前**——`search_experience` 查真实踩坑的修法，`list_libs` 查已封装好的现成能力；
 - **写的时候**——优先调用 `kit.*`，常见坑位（相机锁定、后台动画暂停、加载顺序……）已在库里修掉；
-- **写完之后**——代码下发到真实 Cesium 地球上执行验证，失败自动捕获为经验草稿，跑通可固化为经验。
+- **写完之后**——代码下发到真实地图环境执行验证（试炼场：Cesium / Leaflet / Mapbox / 高德，数据处理经验在宿主 shell 实证），失败自动捕获为经验草稿，跑通可固化为经验。
 
 **接入即获得经验，不改变你现有的工作流。**
 
@@ -18,11 +18,11 @@
    ▼
 geoai MCP Server（经验注入中间件）
    ├── 经验层  search_experience / get_experience / save_experience
-   │           20 条真实踩坑、全部实测验证的经验，随包分发，冷启动即专家
+   │           50+ 条经验随包分发（坐标转换 / 瓦片方案等跨库通识 + 各库踩坑 + 数据处理 CLI），冷启动即专家
    ├── 能力层  list_libs / get_lib_doc / send_snippet
    │           kit.* 现成能力封装（相机飞行 / 影像地形 / 行政边界 / 高程采样），坑已在库里修掉
    └── 执行层  open_page / send_code / run_code
-               浏览器里的真实 Cesium 地球（Monaco 编辑器 + WebSocket 执行）
+               试炼场页面（默认 Cesium 地球，可切 Leaflet / Mapbox / 高德；Monaco 编辑器 + WebSocket 执行）
                     │  WebSocket  ws://127.0.0.1:3001（可换端口；?session=xxx 多会话；可选 token 鉴权）
                     ▼
               页面执行代码 → 返回执行结果 / 报错
@@ -44,7 +44,7 @@ geoai MCP Server（经验注入中间件）
 3. **两层互导**——经验命中时告知「⚡ 已封装为库： kit.xxx」，模型拿到修法的同时知道该调哪个库；
 4. **双通道分发**——MCP 之外，还支持把经验热集导出为 SKILL.md，不方便挂 MCP 的 harness 也能用（见第 5 节）。
 
-**定位边界**：面向 GIS 开发的通用经验，当前主线是 CesiumJS 三维可视化，后续按路线图扩展（见第 10 节）。不做数据库、不做登录、不接 LLM、不做沙箱，代码由 MCP 客户端通过 `send_code` 传入。
+**定位边界**：面向 GIS 开发的通用经验。经验按归属域组织（`lib` 字段）：`cesium`（主线）/ `leaflet` / `mapbox` / `amap` / `geo`（跨库通识：坐标系、瓦片方案、投影）/ `data`（数据处理与 CLI 工具：GDAL、tippecanoe、3d-tiles-tools，验证靠宿主 shell 真跑）。执行试炼场已有 Cesium / Leaflet / Mapbox / 高德四个（见 playgrounds/README.md）。不做数据库、不做登录、不接 LLM、不做沙箱，代码由 MCP 客户端通过 `send_code` 传入。
 
 ---
 
@@ -88,7 +88,9 @@ MCP 客户端配置见第 4 节。
 npm run dev:web    # 前端热更新 http://127.0.0.1:5173（open_page 仍指向 3000，见已知限制 #4）
 npm run typecheck # 库层类型检查（tsc --noEmit）
 npm test           # 内置自测客户端，自动拉起 server.js 驱动全流程
-npm run test:libs  # 能力库层自测（60 项：list_libs / get_lib_doc / send_snippet / kit.* 真飞/真拉）
+npm run test:libs  # 能力库层自测（list_libs / get_lib_doc / send_snippet / kit.* 真飞/真拉）
+npm run test:multi # 多试炼场自测（leaflet 真飞 + open_page playground 参数 + lib 检索/落库）
+npm run test:data  # data 域自测（ogr2ogr / tippecanoe 真跑；未装工具时优雅跳过）
 ```
 
 启动后：
@@ -214,16 +216,16 @@ npx 方式（包发布后推荐）：
 
 | 工具 | 参数 | 行为 |
 | --- | --- | --- |
-| `open_page` | 无 | 用默认浏览器打开 HTTP 服务地址（默认 http://127.0.0.1:3000/playgrounds/cesium/），并等待页面 WebSocket 连入（超时 10s）；配置了 `GEOAI_WS_TOKEN` 时自动携带 token |
-| `list_libs` | `query?` | 列出能力库（kit）；带 query 时按场景/API 名过滤。**写代码前先查这里**——库已封装常见坑位，优先 `kit.*` 而非裸写 Cesium API |
+| `open_page` | `playground?`, `sessionId?` | 用默认浏览器打开试炼场页面（`playground` 可选 `cesium`（默认）/ `leaflet` / `mapbox` / `amap`；指定时默认用 playground 名作会话），并等待页面 WebSocket 连入（超时 10s）；配置了 `GEOAI_WS_TOKEN` 时自动携带 token |
+| `list_libs` | `query?`, `lib?` | 列出能力库（kit）；带 query 时按场景/API 名过滤，带 lib 时按归属域过滤。**写代码前先查这里**——库已封装常见坑位，优先 `kit.*` 而非裸写库 API |
 | `get_lib_doc` | `id` | 读取某个 kit 的用法、签名与可运行示例 |
 | `send_snippet` | `id`, `sessionId?` | 把某个 kit 的示例代码直接推送到编辑器（不执行），随后 `run_code` |
 | `send_code` | `code: string`，`sessionId?` | 把 JS 推送到目标页面的 Monaco（不执行）；`sessionId` 不填则发给最近连入的页面 |
-| `run_code` | `sessionId?` | 通知目标页面执行编辑器当前代码并**等待回执**：成功返回执行返回值，失败返回报错信息并**自动捕获为经验草稿**，超时默认 30s |
-| `get_status` | 无 | 返回 `{ pageConnected, sessions, lastSession, http, websocket }` |
-| `search_experience` | `query: string`，`limit?` | 检索经验库（坑位修法 / 已验证代码 / 用法要点）；写代码前建议先检索，支持场景词、API 名、报错关键词 |
+| `run_code` | `sessionId?` | 通知目标页面执行编辑器当前代码并**等待回执**：成功返回执行返回值，失败返回报错信息并**自动捕获为经验草稿**（按页面所属试炼场标注归属域），超时默认 30s |
+| `get_status` | 无 | 返回 `{ pageConnected, sessions(含 playground), lastSession, playgrounds, http, websocket }` |
+| `search_experience` | `query: string`，`limit?`, `lib?` | 检索经验库（坑位修法 / 已验证代码 / 用法要点），覆盖 cesium/leaflet/mapbox/amap/geo/data 各域；写代码前建议先检索，支持场景词、API/CLI 工具名、报错关键词；`lib` 聚焦本域（不硬过滤） |
 | `get_experience` | `id: string` | 读取单条经验全文（含已验证代码） |
-| `save_experience` | `kind, title, code?...` | 固化经验（Markdown 文件）；run_code 成功后模型可自存，同名自动去重并累加成功次数 |
+| `save_experience` | `kind, title, code?...`, `lib?`, `lang?` | 固化经验（Markdown 文件）；run_code 成功后模型可自存，同名自动去重并累加成功次数；`lib` 不填按当前页面归属推断（geo/data 域必须显式指定），shell 命令用 `lang: "bash"` |
 
 **资源**：`geoai://status`（连接状态）、`geoai://experience/index`（经验库清单）、`geoai://libs/index`（能力库清单 + 外部包登记）。
 
@@ -235,8 +237,8 @@ geoai 不只是执行通道，更是经验沉淀层——这是它区别于普�
 
 - **存储**：默认就在**包目录的 `experience/`**——克隆使用时即仓库内，模型运行沉淀的经验直接落盘该目录，`git commit` 即分发（`GEOAI_EXPERIENCE_DIR` 可另指位置；以 `npx` 运行时写入的是包缓存，易失，长期使用建议克隆或另指目录）。**事实源是每条经验一个 Markdown 文件**（`experience/entries/*.md`，frontmatter 元数据 + 正文），人可直接编辑；`index.json` 为可重建缓存（gitignore）。
 - **三个来源**：① `run_code` 失败时自动落一条 draft 坑位（同一报错不重复捕获）；② 模型跑通后调 `save_experience` 主动固化（返回文本里有提示）；③ 人工直接编辑文件（改完下次检索立即生效，无需重启）。
-- **检索**：关键词打分（标题 5 / 报错签名 4 / tags 3 / API 3 / 正文 1），同分按成功次数排序。条目按**意图**组织（tags 里写场景关键词 + API 名 + 报错签名），不按 API 类组织。
-- **冷启动**：`experience/entries/` 内置 20 条已验证经验（全部 verified）随仓库/包分发（本项目真实踩坑 + 实测：lookAt 解锁、后台 rAF、CDN 离线、Cesium/Monaco 加载顺序、ArcGIS 免费影像/地形、DataV 中国行政边界、量测与绘制状态机、cesium-extends 集成等），新库直接可用，无需安装步骤。
+- **检索**：关键词打分（标题 5 / 报错签名 4 / tags 3 / API 3 / 正文 1），同分按成功次数排序；`lib` 参数聚焦归属域（cesium / leaflet / mapbox / amap / geo / data，命中优先返回本域、不硬过滤）。条目按**意图**组织（tags 里写场景关键词 + API 名/CLI 工具名 + 报错签名），不按 API 类组织。
+- **冷启动**：`experience/entries/` 内置 50+ 条经验随仓库/包分发（本项目真实踩坑 + 实测：lookAt 解锁、后台 rAF、CDN 离线、Cesium/Monaco 加载顺序、ArcGIS 免费影像/地形、DataV 中国行政边界、量测与绘制状态机、cesium-extends 集成等；geo 域的坐标系转换 / 瓦片方案经 node 实测为 verified；data 域 CLI 条目为待实证 draft），新库直接可用，无需安装步骤。
 - **治理**：同名去重累加计数；draft 被修复固化后升级 verified；条目按成功次数与新鲜度淘汰（软上限 200，超出时提示清理）。
 - **校验与创建流水线**（组织模式对照 WorkBuddy expert-manager）：
   `npm run lint:exp` 硬校验条目与导出物——frontmatter 严格 `key: value` 格式（防「冒号后丢空格静默失效」）、
@@ -415,9 +417,9 @@ npm publish        # prepare 钩子先自动重新构建；files 白名单保证
 
 | 方向 | 说明 |
 | --- | --- |
-| 经验领域扩展 | 从 CesiumJS 三维可视化主线扩展到更广的 GIS 开发经验：坐标系统与投影、矢量瓦片、OGC 服务、空间分析、数据格式转换……目标是「GIS 开发的大多数常见经验，接入即得」 |
-| 多试炼场 | 试炼场模式（playgrounds/）复制到 Mapbox GL JS / Leaflet / deck.gl 等其他地图库，每个库一个真实执行环境，共享同一份经验库与经验飞轮（新增步骤见 playgrounds/README.md） |
-| 扩充能力库 | 实体与图层管理、地形剖面、时间轴、量测绘制（cesium-extends 的 tooltip/popup/measure/drawer 以注入式重写进 kits） |
+| 经验领域扩展（进行中） | 经验库已支持归属域（`lib` 字段）：`geo` 跨库通识（坐标系转换、瓦片方案、投影/格式选型）与 `data` 数据处理域（ogr2ogr、tippecanoe、3d-tiles-tools，`npm run test:data` 实证）已建立；后续持续沉淀条目并扩 OGC 服务、空间分析 |
+| 多试炼场（一期完成） | 已有 cesium / leaflet / mapbox / amap 四个试炼场共享同一经验库与飞轮（`open_page` 的 `playground` 参数切换，新增步骤见 playgrounds/README.md）；deck.gl 等按需再加 |
+| 扩充能力库 | 实体与图层管理、地形剖面、时间轴、量测绘制（cesium-extends 的 tooltip/popup/measure/drawer 以注入式重写进 kits）；新库 kit 按经验密度结晶（同一坑位修两次以上再封装） |
 | iframe 沙箱 | 把用户代码放进 `sandbox` iframe，`allow-scripts` + `postMessage` 返回结果/错误，替换 `new Function` |
 | 语义检索 | 经验检索从关键词打分升级为向量/语义检索（条目过千后再做） |
 | 自动重连 | 页面 WebSocket 断开后指数退避重连，替代「刷新页面恢复」 |

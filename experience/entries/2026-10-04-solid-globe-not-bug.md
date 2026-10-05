@@ -2,6 +2,7 @@
 id: 2026-10-04-solid-globe-not-bug
 title: 地球是纯色深蓝不是渲染故障——未配置天地图 key 的合规默认
 kind: pitfall
+lib: cesium
 tags: [底图, 天地图, 纯色地球, 影像]
 apis: [globe.baseColor, showGraticule]
 errors: [地球全黑, 没有地图, 纯色球]
@@ -24,3 +25,5 @@ source: manual
 // 桥接/相机/实体等一切功能不受影响 —— 不要把它当 bug 修。
 return 'solid globe is by design (no tianditu key)';
 ```
+
+> 相关: [[2026-10-05-domestic-imagery-traps]]（真的接天地图/4490/高德时的三个坑）

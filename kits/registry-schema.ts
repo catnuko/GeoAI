@@ -24,13 +24,15 @@ export interface KitEntry {
   source: KitSource;
   /** ready=已挂载可用 / planned=规划中勿调用 */
   status: KitStatus;
+  /** 归属域：目标地图库（cesium/leaflet/mapbox/amap），与经验条目 lib 字段对齐；缺省 cesium */
+  lib?: 'cesium' | 'leaflet' | 'mapbox' | 'amap' | 'geo' | 'data' | string;
   /** 展示标题 */
   title: string;
   /** 一句话说明能做什么 */
   summary: string;
   /** 意图关键词（模型按场景检索） */
   intents?: string[];
-  /** 覆盖的 Cesium 原生 API 名（与经验库 apis 字段对齐） */
+  /** 覆盖的地图库原生 API 名（与经验库 apis 字段对齐） */
   apis?: string[];
   /** 调用签名 */
   signature: string;
